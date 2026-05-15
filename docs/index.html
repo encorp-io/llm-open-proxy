@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>@encorp/llm-open-proxy</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="OpenAI-canonical chat-completion request/response translator for Anthropic, Google, DeepSeek, Perplexity, xAI, Kimi. Zero runtime dependencies."
+    />
+    <link rel="icon" href="data:," />
+    <link
+      href="https://fonts.googleapis.com/css?family=Inter:300,400,500,600,700|JetBrains+Mono"
+      rel="stylesheet"
+    />
+    <style>
+      :root {
+        --bg: #0a0a0a;
+        --card: #141414;
+        --border: #2a2a2a;
+        --fg: #f5f5f5;
+        --muted: #999;
+        --accent: #f97316;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--fg);
+        line-height: 1.5;
+      }
+      .container {
+        max-width: 980px;
+        margin: 0 auto;
+        padding: 64px 24px;
+      }
+      .hero {
+        text-align: center;
+        padding: 32px 0 64px;
+      }
+      .pkg {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        color: var(--accent);
+        letter-spacing: 0.5px;
+      }
+      h1 {
+        font-size: 40px;
+        font-weight: 700;
+        margin: 16px 0 12px;
+        line-height: 1.15;
+      }
+      .tagline {
+        font-size: 18px;
+        color: var(--muted);
+        max-width: 640px;
+        margin: 0 auto 28px;
+      }
+      .badges {
+        display: flex;
+        justify-content: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 32px;
+      }
+      .badge {
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 12px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        padding: 4px 10px;
+        border-radius: 4px;
+        color: var(--muted);
+      }
+      .install {
+        background: var(--card);
+        border: 1px solid var(--border);
+        padding: 14px 20px;
+        border-radius: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 14px;
+        max-width: 420px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .install::before {
+        content: '$';
+        color: var(--accent);
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+        gap: 16px;
+        margin-top: 32px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--border);
+        padding: 24px;
+        border-radius: 8px;
+        text-decoration: none;
+        color: var(--fg);
+        transition: border-color 0.15s;
+      }
+      .card:hover {
+        border-color: var(--accent);
+      }
+      .card h3 {
+        margin: 0 0 8px;
+        font-size: 18px;
+      }
+      .card p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+      .arrow {
+        color: var(--accent);
+        margin-left: 4px;
+      }
+      .section {
+        margin-top: 64px;
+      }
+      .section h2 {
+        font-size: 22px;
+        margin-bottom: 16px;
+      }
+      pre {
+        background: var(--card);
+        border: 1px solid var(--border);
+        padding: 20px;
+        border-radius: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 13px;
+        overflow-x: auto;
+        line-height: 1.55;
+      }
+      code {
+        font-family: 'JetBrains Mono', monospace;
+        background: var(--card);
+        border: 1px solid var(--border);
+        padding: 1px 6px;
+        border-radius: 3px;
+        font-size: 0.9em;
+      }
+      pre code {
+        background: none;
+        border: none;
+        padding: 0;
+      }
+      footer {
+        text-align: center;
+        margin-top: 64px;
+        padding-top: 32px;
+        border-top: 1px solid var(--border);
+        color: var(--muted);
+        font-size: 13px;
+      }
+      footer a {
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <div class="hero">
+        <div class="pkg">@encorp/llm-open-proxy</div>
+        <h1>One LLM request shape.<br />Every provider.</h1>
+        <p class="tagline">
+          Drop-in OpenAI-format ↔ Anthropic / Google / DeepSeek / Perplexity / xAI / Kimi
+          translator. Parameter mapping, message reshape, tool-call translation, SSE
+          streaming bridge — all without a single runtime dependency.
+        </p>
+        <div class="badges">
+          <span class="badge">zero deps</span>
+          <span class="badge">node ≥ 18</span>
+          <span class="badge">100% test coverage</span>
+          <span class="badge">MIT</span>
+        </div>
+        <div class="install">npm i @encorp/llm-open-proxy</div>
+      </div>
+
+      <div class="grid">
+        <a class="card" href="./openapi.html">
+          <h3>OpenAPI spec <span class="arrow">→</span></h3>
+          <p>
+            The canonical chat completions wire format. Generate a typed client SDK in
+            any language, or validate inbound requests in your gateway.
+          </p>
+        </a>
+        <a class="card" href="./typedoc/">
+          <h3>TypeScript API reference <span class="arrow">→</span></h3>
+          <p>
+            Generated TypeDoc for every exported function, type and config. Click
+            through types, see source links.
+          </p>
+        </a>
+        <a class="card" href="https://github.com/encorp-io/llm-open-proxy#readme">
+          <h3>README & guides <span class="arrow">→</span></h3>
+          <p>
+            Quick start, translation matrix per provider, retry policy, tree-shaking,
+            migration plan.
+          </p>
+        </a>
+        <a class="card" href="https://github.com/encorp-io/llm-open-proxy/tree/main/examples">
+          <h3>Examples <span class="arrow">→</span></h3>
+          <p>
+            Runnable mini-projects: basic Anthropic call, SSE streaming, multi-provider
+            fallback router, and a drop-in Express proxy server.
+          </p>
+        </a>
+      </div>
+
+      <div class="section">
+        <h2>30-second quickstart</h2>
+        <pre><code>import { sendAnthropicRequest } from '@encorp/llm-open-proxy';
+
+const { response, usage, warnings } = await sendAnthropicRequest({
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+  body: {
+    model: 'claude-opus-4-6',
+    messages: [
+      { role: 'system', content: 'You are helpful.' },
+      { role: 'user', content: 'Hello' },
+    ],
+    max_completion_tokens: 256,
+  },
+});
+
+console.log(response.choices[0].message.content);
+// `response` is OpenAI-shaped, regardless of upstream.</code></pre>
+      </div>
+
+      <footer>
+        Built and maintained by
+        <a href="https://encorp.io">Encorp</a>
+        · MIT license · See it on
+        <a href="https://github.com/encorp-io/llm-open-proxy">GitHub</a>
+      </footer>
+    </div>
+  </body>
+</html>

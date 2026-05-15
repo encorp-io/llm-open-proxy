@@ -1,0 +1,96 @@
+{
+  "name": "@encorp/llm-open-proxy",
+  "version": "0.1.0",
+  "description": "OpenAI-canonical chat-completion request/response translator for Anthropic, Google, DeepSeek, Perplexity, xAI, Kimi. Zero runtime dependencies.",
+  "keywords": [
+    "openai",
+    "anthropic",
+    "google",
+    "gemini",
+    "deepseek",
+    "perplexity",
+    "xai",
+    "kimi",
+    "llm",
+    "proxy",
+    "gateway",
+    "translator",
+    "chat-completions",
+    "ai-sdk"
+  ],
+  "license": "MIT",
+  "author": "Encorp Bulgaria Ltd. <hello@encorp.io>",
+  "homepage": "https://encorp-io.github.io/llm-open-proxy",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/encorp-io/llm-open-proxy.git"
+  },
+  "bugs": {
+    "url": "https://github.com/encorp-io/llm-open-proxy/issues"
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./providers/openai": {
+      "types": "./dist/providers/openai.d.ts",
+      "import": "./dist/providers/openai.js"
+    },
+    "./providers/anthropic": {
+      "types": "./dist/providers/anthropic.d.ts",
+      "import": "./dist/providers/anthropic.js"
+    },
+    "./providers/google": {
+      "types": "./dist/providers/google.d.ts",
+      "import": "./dist/providers/google.js"
+    },
+    "./providers/deepseek": {
+      "types": "./dist/providers/deepseek.d.ts",
+      "import": "./dist/providers/deepseek.js"
+    },
+    "./providers/perplexity": {
+      "types": "./dist/providers/perplexity.d.ts",
+      "import": "./dist/providers/perplexity.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "build:test": "tsc -p tsconfig.test.json",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build:test && node --test --test-reporter=spec .test-build/__tests__",
+    "test:coverage": "npm run build:test && node --test --experimental-test-coverage --test-coverage-include='.test-build/src/**/*.js' --test-coverage-exclude='.test-build/__tests__/**' --test-reporter=spec .test-build/__tests__",
+    "docs": "bash scripts/build-docs.sh",
+    "docs:typedoc": "typedoc",
+    "docs:lint": "redocly lint docs/openapi.yaml",
+    "docs:preview": "http-server _site -p 8080 -o",
+    "clean": "rm -rf dist .test-build _site docs/typedoc",
+    "prepublishOnly": "npm run clean && npm run typecheck && npm test && npm run build"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^1.0.0",
+    "@types/node": "^22.0.0",
+    "http-server": "^14.0.0",
+    "typedoc": "^0.28.0",
+    "typescript": "^5.0.0"
+  }
+}

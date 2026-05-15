@@ -1,0 +1,60 @@
+name: Release
+
+# Publishes @encorp/llm-open-proxy to npm with build provenance.
+#
+# Trigger: create a GitHub Release whose tag matches `v<semver>` (e.g. v0.1.1).
+# The job verifies that the tag matches package.json `version` before publishing.
+#
+# Required repo setup:
+#   - NPM_TOKEN secret (Automation token, not Publish — Automation tokens
+#     support `--provenance`).
+#   - npm package "@encorp/llm-open-proxy" must be created on first run with
+#     `--access public` (already wired in `npm publish` below).
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # required for npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: npm
+
+      - name: Install dependencies
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install --no-audit --no-fund
+          fi
+
+      - name: Verify tag matches package.json version
+        if: github.event_name == 'release'
+        run: |
+          PKG_VERSION="v$(node -p "require('./package.json').version")"
+          TAG="${GITHUB_REF_NAME}"
+          if [ "$PKG_VERSION" != "$TAG" ]; then
+            echo "Tag $TAG does not match package.json version $PKG_VERSION" >&2
+            exit 1
+          fi
+
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

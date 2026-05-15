@@ -1,0 +1,19 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["src/index.ts"],
+  "out": "docs/typedoc",
+  "tsconfig": "./tsconfig.json",
+  "name": "@encorp/llm-open-proxy",
+  "readme": "README.md",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "excludeProtected": false,
+  "categorizeByGroup": true,
+  "navigationLinks": {
+    "Home": "../",
+    "OpenAPI": "../openapi.html",
+    "GitHub": "https://github.com/encorp-io/llm-open-proxy"
+  },
+  "sort": ["source-order"]
+}

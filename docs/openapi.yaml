@@ -1,0 +1,514 @@
+openapi: 3.1.0
+info:
+  title: LLM Open Proxy — Canonical Chat Completions
+  version: 0.1.0
+  summary: |
+    OpenAI-canonical Chat Completions wire format used by `@encorp/llm-open-proxy`.
+  description: |
+    This document describes the **canonical request/response shape** that
+    `@encorp/llm-open-proxy` accepts and produces. The shape mirrors OpenAI's
+    Chat Completions API with three additions:
+
+    * `provider_options` — per-provider escape hatch
+    * `max_completion_tokens` — preferred over the legacy `max_tokens`
+    * `reasoning_effort` — universal control mapped to provider-specific knobs
+
+    Use this spec to:
+      * generate a typed client SDK in any language (`openapi-generator`, `oats`)
+      * validate inbound requests in your gateway
+      * understand exactly what fields each provider supports — see the
+        x-provider-support extension on each schema field
+
+    The library itself is not an HTTP server — this spec describes the shape
+    you should use when *building* an HTTP service on top of the library.
+  license:
+    name: MIT
+    identifier: MIT
+  contact:
+    name: Encorp
+    url: https://github.com/encorp-io/llm-open-proxy
+
+servers:
+  - url: https://your-gateway.example.com/v1
+    description: Replace with your own deployment
+
+tags:
+  - name: chat
+    description: Chat completion endpoints
+
+paths:
+  /chat/completions:
+    post:
+      tags: [chat]
+      operationId: createChatCompletion
+      summary: Create a chat completion
+      description: |
+        Generate a model response for a conversation. Set `stream: true` to
+        receive Server-Sent Events instead of a single JSON response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CanonicalChatRequest'
+            examples:
+              basic:
+                summary: Minimal request
+                value:
+                  model: claude-opus-4-6
+                  messages:
+                    - role: system
+                      content: You are helpful.
+                    - role: user
+                      content: Hello
+                  max_completion_tokens: 256
+              streaming:
+                summary: Streaming request with reasoning
+                value:
+                  model: o3-mini
+                  messages:
+                    - role: user
+                      content: Plan a trip to Sofia.
+                  reasoning_effort: high
+                  stream: true
+              tools:
+                summary: Function-calling request
+                value:
+                  model: claude-opus-4-6
+                  messages:
+                    - role: user
+                      content: What's the weather in Sofia?
+                  tools:
+                    - type: function
+                      function:
+                        name: get_weather
+                        parameters:
+                          type: object
+                          properties:
+                            city: { type: string }
+                  tool_choice: auto
+      responses:
+        '200':
+          description: Successful completion
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CanonicalChatResponse'
+            text/event-stream:
+              schema:
+                $ref: '#/components/schemas/StreamingChunk'
+              examples:
+                stream:
+                  summary: SSE stream
+                  value: |
+                    data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"claude-opus-4-6","choices":[{"index":0,"delta":{"content":"Hi"},"finish_reason":null}]}
+
+                    data: {"id":"chatcmpl-1","object":"chat.completion.chunk","created":1,"model":"claude-opus-4-6","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+                    data: [DONE]
+        '400':
+          description: Malformed request
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: Authentication failure
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: Model unknown to upstream (transiently retryable)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '408':
+          description: Upstream request timeout (retryable)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '422':
+          description: Validation error from upstream
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Rate limited (retryable)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Internal upstream error (retryable)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '502':
+          description: Bad gateway from upstream (retryable)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: Provider unavailable (retryable)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '504':
+          description: Gateway timeout (retryable)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: API key forwarded as `Authorization: Bearer <key>`.
+
+  schemas:
+    ProviderName:
+      type: string
+      enum: [openai, anthropic, google, deepseek, perplexity, xai, kimi]
+
+    Role:
+      type: string
+      enum: [system, user, assistant, tool, developer]
+
+    ContentPart:
+      oneOf:
+        - type: object
+          required: [type, text]
+          properties:
+            type: { const: text }
+            text: { type: string }
+        - type: object
+          required: [type, image_url]
+          properties:
+            type: { const: image_url }
+            image_url:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  description: Either a URL or a `data:` URI (base64 image).
+                detail:
+                  type: string
+                  enum: [low, high, auto]
+
+    ChatToolCall:
+      type: object
+      required: [id, type, function]
+      properties:
+        id: { type: string }
+        type: { const: function }
+        function:
+          type: object
+          required: [name, arguments]
+          properties:
+            name: { type: string }
+            arguments:
+              type: string
+              description: JSON-encoded argument object.
+
+    ChatMessage:
+      type: object
+      required: [role]
+      properties:
+        role: { $ref: '#/components/schemas/Role' }
+        content:
+          oneOf:
+            - { type: string }
+            - type: array
+              items: { $ref: '#/components/schemas/ContentPart' }
+            - { type: 'null' }
+        name: { type: string }
+        tool_call_id:
+          type: string
+          description: Required on tool messages.
+        tool_calls:
+          type: array
+          items: { $ref: '#/components/schemas/ChatToolCall' }
+        reasoning_content:
+          type: string
+          description: |
+            DeepSeek v4 thinking-mode artifact. Preserved automatically when
+            forwarding to DeepSeek; stripped for every other provider.
+
+    ChatTool:
+      type: object
+      required: [type, function]
+      properties:
+        type: { const: function }
+        function:
+          type: object
+          required: [name]
+          properties:
+            name: { type: string }
+            description: { type: string }
+            parameters:
+              type: object
+              description: JSON Schema describing the function arguments.
+              additionalProperties: true
+            strict: { type: boolean }
+
+    ChatToolChoice:
+      oneOf:
+        - { type: string, enum: [auto, none, required] }
+        - type: object
+          required: [type, function]
+          properties:
+            type: { const: function }
+            function:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+
+    ResponseFormat:
+      oneOf:
+        - type: object
+          required: [type]
+          properties: { type: { const: text } }
+        - type: object
+          required: [type]
+          properties: { type: { const: json_object } }
+        - type: object
+          required: [type, json_schema]
+          properties:
+            type: { const: json_schema }
+            json_schema:
+              type: object
+              required: [name, schema]
+              properties:
+                name: { type: string }
+                schema:
+                  type: object
+                  additionalProperties: true
+                strict: { type: boolean }
+
+    CanonicalChatRequest:
+      type: object
+      required: [model, messages]
+      properties:
+        model:
+          type: string
+          description: Provider-native model identifier (e.g. `gpt-4o`, `claude-opus-4-6`).
+        messages:
+          type: array
+          items: { $ref: '#/components/schemas/ChatMessage' }
+        temperature:
+          type: number
+          minimum: 0
+          maximum: 2
+          x-provider-support:
+            anthropic: clamped to ≤ 1
+            openai: dropped on gpt-5 / o-series
+        top_p:
+          type: number
+          minimum: 0
+          maximum: 1
+          x-provider-support:
+            openai: dropped on gpt-5 / o-series
+        top_k:
+          type: integer
+          x-provider-support:
+            anthropic: ✓
+            google: ✓
+            openai: dropped
+            deepseek: dropped
+            perplexity: dropped
+        n:
+          type: integer
+          minimum: 1
+          x-provider-support:
+            anthropic: dropped (n=1 only)
+            deepseek: dropped (n=1 only)
+            perplexity: dropped (n=1 only)
+        max_completion_tokens:
+          type: integer
+          minimum: 1
+          description: Preferred. Renamed to `max_tokens` for Anthropic / DeepSeek / Perplexity.
+        max_tokens:
+          type: integer
+          minimum: 1
+          deprecated: true
+          description: Legacy alias for `max_completion_tokens`.
+        stop:
+          oneOf:
+            - { type: string }
+            - type: array
+              items: { type: string }
+          x-provider-support:
+            anthropic: renamed to `stop_sequences`
+        frequency_penalty:
+          type: number
+          x-provider-support:
+            anthropic: dropped
+            deepseek: dropped (deprecated v4)
+            perplexity: dropped
+        presence_penalty:
+          type: number
+          x-provider-support:
+            anthropic: dropped
+            deepseek: dropped (deprecated v4)
+            perplexity: dropped
+        logit_bias:
+          type: object
+          additionalProperties: { type: number }
+          x-provider-support:
+            anthropic: dropped
+            google: dropped
+            deepseek: dropped
+            perplexity: dropped
+        seed:
+          type: integer
+          x-provider-support:
+            anthropic: dropped
+            deepseek: dropped
+            perplexity: dropped
+        user:
+          type: string
+          x-provider-support:
+            anthropic: routed to `metadata.user_id`
+            deepseek: renamed to `user_id`
+        logprobs: { type: boolean }
+        top_logprobs: { type: integer }
+        response_format:
+          $ref: '#/components/schemas/ResponseFormat'
+          x-provider-support:
+            anthropic: translated to `output_config`
+        tools:
+          type: array
+          items: { $ref: '#/components/schemas/ChatTool' }
+          x-provider-support:
+            anthropic: reshaped to `input_schema`
+        tool_choice:
+          $ref: '#/components/schemas/ChatToolChoice'
+          x-provider-support:
+            anthropic: reshaped (`{type, name}`)
+            perplexity: dropped
+        parallel_tool_calls:
+          type: boolean
+          x-provider-support:
+            anthropic: dropped (uses `disable_parallel_tool_use`)
+            deepseek: dropped
+            perplexity: dropped
+        reasoning_effort:
+          type: string
+          enum: [minimal, low, medium, high]
+          x-provider-support:
+            anthropic: mapped to `thinking.budget_tokens`
+            deepseek: mapped to `thinking.reasoning_effort`
+        stream: { type: boolean }
+        stream_options:
+          type: object
+          properties:
+            include_usage: { type: boolean }
+        provider_options:
+          type: object
+          description: |
+            Per-provider escape hatch. Only the entry whose key matches the
+            active provider is shallow-merged into the upstream body.
+          additionalProperties:
+            type: object
+            additionalProperties: true
+
+    CanonicalChatResponse:
+      type: object
+      required: [id, object, created, model, choices, usage]
+      properties:
+        id: { type: string }
+        object: { const: chat.completion }
+        created: { type: integer }
+        model: { type: string }
+        choices:
+          type: array
+          items:
+            type: object
+            required: [index, message, finish_reason]
+            properties:
+              index: { type: integer }
+              message:
+                type: object
+                required: [role]
+                properties:
+                  role: { const: assistant }
+                  content:
+                    oneOf:
+                      - { type: string }
+                      - { type: 'null' }
+                  tool_calls:
+                    type: array
+                    items: { $ref: '#/components/schemas/ChatToolCall' }
+              finish_reason:
+                type: string
+                enum: [stop, length, tool_calls, content_filter]
+        usage: { $ref: '#/components/schemas/TokenUsage' }
+
+    StreamingChunk:
+      type: object
+      description: |
+        Single SSE event payload. The wire format is
+        `data: <JSON>\n\n`, with a final `data: [DONE]\n\n`.
+      required: [id, object, created, model, choices]
+      properties:
+        id: { type: string }
+        object: { const: chat.completion.chunk }
+        created: { type: integer }
+        model: { type: string }
+        choices:
+          type: array
+          items:
+            type: object
+            required: [index, delta]
+            properties:
+              index: { type: integer }
+              delta:
+                type: object
+                properties:
+                  role: { const: assistant }
+                  content: { type: string }
+                  tool_calls:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        index: { type: integer }
+                        id: { type: string }
+                        type: { const: function }
+                        function:
+                          type: object
+                          properties:
+                            name: { type: string }
+                            arguments: { type: string }
+              finish_reason:
+                oneOf:
+                  - { type: 'null' }
+                  - { type: string, enum: [stop, length, tool_calls, content_filter] }
+        usage:
+          $ref: '#/components/schemas/TokenUsage'
+          description: Present only on the final chunk when stream_options.include_usage is true.
+
+    TokenUsage:
+      type: object
+      required: [prompt_tokens, completion_tokens, total_tokens]
+      properties:
+        prompt_tokens: { type: integer }
+        completion_tokens: { type: integer }
+        total_tokens: { type: integer }
+
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [message]
+          properties:
+            message: { type: string }
+            type: { type: string }
+            code: { type: string }
+            param: { type: string }
+
+security:
+  - bearer: []
