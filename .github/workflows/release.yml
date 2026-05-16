@@ -15,6 +15,14 @@ name: Release
 #        Environment:       (leave blank, or set to "npm" if you add one)
 #   3. After the first publish, provenance + Sigstore attestation appear
 #      automatically on the npm page.
+#
+# Why Node 24, not 22:
+#   Trusted Publishing requires npm >= 11.5.1. Node 22 ships npm 10.x, so
+#   it would need a `npm install -g npm@latest` self-upgrade step, which
+#   is a famously fragile dance (it partially removes the running npm
+#   before installing the new one, causing MODULE_NOT_FOUND on internals
+#   like `promise-retry` mid-install). Node 24 ships with npm 11.x out of
+#   the box, so no self-upgrade is needed.
 
 on:
   release:
@@ -33,13 +41,21 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
 
-      # Trusted Publishing requires npm >= 11.5.1; Node 22 ships an older
-      # npm by default, so pin a known-good version.
-      - name: Upgrade npm
-        run: npm install -g npm@latest
+      - name: Verify npm version supports Trusted Publishing
+        run: |
+          NPM_VERSION=$(npm --version)
+          echo "npm version: $NPM_VERSION"
+          # Trusted Publishing was added in npm 11.5.1.
+          node -e "
+            const v = '$NPM_VERSION'.split('.').map(Number);
+            if (v[0] < 11 || (v[0] === 11 && v[1] < 5) || (v[0] === 11 && v[1] === 5 && v[2] < 1)) {
+              console.error('npm', '$NPM_VERSION', 'does not support Trusted Publishing — need >= 11.5.1');
+              process.exit(1);
+            }
+          "
 
       - name: Install dependencies
         run: |
