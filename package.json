@@ -1,6 +1,6 @@
 {
   "name": "@encorp.ai/llm-open-proxy",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "OpenAI-canonical chat-completion request/response translator for Anthropic, Google, DeepSeek, Perplexity, xAI, Kimi. Zero runtime dependencies.",
   "keywords": [
     "openai",
