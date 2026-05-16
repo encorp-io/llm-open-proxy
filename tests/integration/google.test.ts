@@ -12,7 +12,11 @@ import {
 } from './helpers.js';
 
 const apiKey = process.env.GOOGLE_API_KEY ?? '';
-const model = process.env.GOOGLE_MODEL ?? 'gemini-2.5-flash';
+// Default to gemini-2.0-flash (non-thinking). Gemini 2.5 Flash burns
+// completion tokens on internal reasoning by default, which can leave zero
+// tokens for visible output on a 32-token cap. Override via GOOGLE_MODEL
+// to test a different one.
+const model = process.env.GOOGLE_MODEL ?? 'gemini-2.0-flash';
 
 test('google (OpenAI-compat) — basic request returns canonical response', skipIfMissingKey('GOOGLE_API_KEY'), async () => {
   const { body } = convertChatRequest(buildMinimalRequest(model), 'google');

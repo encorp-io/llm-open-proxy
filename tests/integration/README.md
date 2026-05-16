@@ -11,8 +11,10 @@ catch.
 - Tests are skipped automatically when the relevant API key env var is
   unset. Run them only against the providers you have keys for.
 - Each test deliberately stays tiny (system prompt + 1-line user prompt,
-  `max_completion_tokens=10`). Running the whole suite once against
-  every provider should cost a fraction of a cent.
+  `max_completion_tokens=32`). Running the whole suite once against
+  every provider should cost a fraction of a cent. The 32-token cap
+  gives reasoning models (Gemini 2.5 Flash, o-series, etc.) some
+  headroom for thinking tokens before they emit visible output.
 - They are **not** run in CI by default. The repo's GitHub Actions
   workflow runs the unit suite only. To run integration tests in CI,
   add the keys as GitHub Action secrets and a manual workflow that calls
@@ -39,7 +41,7 @@ Each test picks a cheap, fast model by default. To override:
 ```bash
 ANTHROPIC_MODEL=claude-opus-4-6 npm run test:integration
 OPENAI_MODEL=gpt-4o-mini       npm run test:integration
-GOOGLE_MODEL=gemini-2.5-flash  npm run test:integration
+GOOGLE_MODEL=gemini-2.0-flash  npm run test:integration
 DEEPSEEK_MODEL=deepseek-chat   npm run test:integration
 PERPLEXITY_MODEL=sonar         npm run test:integration
 XAI_MODEL=grok-3-mini          npm run test:integration

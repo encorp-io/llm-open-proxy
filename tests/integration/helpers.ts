@@ -22,7 +22,10 @@ export function buildMinimalRequest(model: string): CanonicalChatRequest {
       { role: 'system', content: 'Reply with a single short word.' },
       { role: 'user', content: 'Hi' },
     ],
-    max_completion_tokens: 10,
+    // 32 not 10: gives reasoning models (Gemini 2.5 Flash, o-series, etc.)
+    // some headroom for thinking tokens before any visible content is emitted.
+    // Still costs a fraction of a cent per call.
+    max_completion_tokens: 32,
   };
 }
 
@@ -45,7 +48,20 @@ export function assertCanonicalResponse(response: CanonicalChatResponse): void {
   const hasContent =
     (typeof content === 'string' && content.length > 0) ||
     (Array.isArray(content) && content.length > 0);
-  assert.ok(hasContent, `choice.message.content is empty: ${JSON.stringify(content)}`);
+
+  if (!hasContent) {
+    // Diagnostic: show finish_reason + usage so we can tell whether the
+    // upstream tripped a safety filter, hit a token limit (esp. a thinking
+    // model burning its budget on reasoning), or returned a genuine empty
+    // response.
+    const diag = {
+      content,
+      finish_reason: choice.finish_reason,
+      usage: response.usage,
+      model: response.model,
+    };
+    assert.fail(`choice.message.content is empty: ${JSON.stringify(diag, null, 2)}`);
+  }
 }
 
 /**
