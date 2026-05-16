@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1](https://github.com/encorp-io/llm-open-proxy/compare/@encorp.ai/llm-open-proxy-v0.2.0...@encorp.ai/llm-open-proxy-v0.2.1) (2026-05-16)
+
+
+### Bug Fixes
+
+* **ci:** accept release-please's prefixed tag format in release.yml ([f92e53a](https://github.com/encorp-io/llm-open-proxy/commit/f92e53a4da8b1a148255cf5a599f1d7b35d6ac5a))
+* **ci:** use Node 24 in release workflow to avoid npm self-upgrade flake ([b31b8a1](https://github.com/encorp-io/llm-open-proxy/commit/b31b8a188dbdfa61856d28eba20866e31a114b85))
+
 ## [0.2.0](https://github.com/encorp-io/llm-open-proxy/compare/@encorp.ai/llm-open-proxy-v0.1.0...@encorp.ai/llm-open-proxy-v0.2.0) (2026-05-16)
 
 
