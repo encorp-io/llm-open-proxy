@@ -90,7 +90,7 @@
   },
   "devDependencies": {
     "@redocly/cli": "^2.30.6",
-    "@types/node": "^22.0.0",
+    "@types/node": "^25.8.0",
     "http-server": "^14.0.0",
     "typedoc": "^0.28.0",
     "typescript": "^5.0.0"
