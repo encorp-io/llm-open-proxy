@@ -1,7 +1,10 @@
 # Examples
 
-Each example is a standalone runnable mini-project. Set the relevant API
-key in your shell, then `npm install && npm start` inside the folder.
+Each example is a standalone runnable mini-project. Copy `.env.example`
+to `.env` and fill in the API keys it asks for, then `npm install && npm
+start` inside the folder. The `start` script passes
+`--env-file-if-exists=.env` to Node, so shell-exported env vars also
+work if you prefer not to write a `.env` file.
 
 | # | Folder | Demonstrates |
 |---|---|---|

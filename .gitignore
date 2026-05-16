@@ -1,8 +1,15 @@
 node_modules
 dist
 .test-build
+.test-build-integration
 coverage
 _site
 docs/typedoc
 *.tsbuildinfo
 .DS_Store
+
+# Local secrets — never commit these.
+.env
+.env.local
+.env.*.local
+examples/**/.env

@@ -7,7 +7,7 @@ upstream is Anthropic — the library translates the SSE event names and
 shapes on the fly.
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+cp .env.example .env       # then edit .env and set ANTHROPIC_API_KEY
 npm install
 npm start
 ```

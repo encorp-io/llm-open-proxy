@@ -5,10 +5,14 @@ comes back in OpenAI Chat Completion shape, not Anthropic's native shape —
 the library translates both directions.
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+cp .env.example .env       # then edit .env and set ANTHROPIC_API_KEY
 npm install
 npm start
 ```
+
+`npm start` passes `--env-file-if-exists=.env` to Node, so you can also
+skip the `.env` file and just `export ANTHROPIC_API_KEY=...` in your shell
+if you prefer.
 
 Expected output:
 

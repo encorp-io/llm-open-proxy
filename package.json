@@ -71,11 +71,13 @@
     "typecheck": "tsc --noEmit",
     "test": "npm run build:test && node --test --test-reporter=spec '.test-build/__tests__/**/*.test.js'",
     "test:coverage": "npm run build:test && node --test --experimental-test-coverage --test-coverage-include='.test-build/src/**/*.js' --test-coverage-exclude='.test-build/__tests__/**' --test-reporter=spec '.test-build/__tests__/**/*.test.js'",
+    "build:integration": "tsc -p tsconfig.integration.json",
+    "test:integration": "npm run build:integration && node --env-file-if-exists=.env --test --test-reporter=spec '.test-build-integration/tests/integration/**/*.test.js'",
     "docs": "bash scripts/build-docs.sh",
     "docs:typedoc": "typedoc",
     "docs:lint": "redocly lint docs/openapi.yaml",
     "docs:preview": "http-server _site -p 8080 -o",
-    "clean": "rm -rf dist .test-build _site docs/typedoc",
+    "clean": "rm -rf dist .test-build .test-build-integration _site docs/typedoc",
     "prepublishOnly": "npm run clean && npm run typecheck && npm test && npm run build"
   },
   "publishConfig": {

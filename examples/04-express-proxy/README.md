@@ -12,8 +12,8 @@ the building blocks to build your own multi-provider gateway in 80 lines
 of code.
 
 ```bash
-export OPENAI_API_KEY=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
+cp .env.example .env       # then edit .env and set the keys for the
+                           # providers you want to route to
 npm install
 npm start
 # server listening on :3000

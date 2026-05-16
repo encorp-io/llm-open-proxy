@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "./.test-build-integration",
+    "noEmit": false,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": true,
+    "inlineSources": true
+  },
+  "include": ["src/**/*", "tests/integration/**/*"],
+  "exclude": ["dist", "node_modules", ".test-build", ".test-build-integration", "__tests__"]
+}

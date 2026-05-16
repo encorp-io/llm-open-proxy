@@ -15,8 +15,7 @@ The library's pieces used here:
 - `UpstreamError` + `isRetryableUpstreamStatus` — error classification
 
 ```bash
-export OPENAI_API_KEY=sk-...
-export ANTHROPIC_API_KEY=sk-ant-...
+cp .env.example .env       # then edit .env and set both keys
 npm install
 npm start
 ```
