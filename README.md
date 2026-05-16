@@ -1,4 +1,4 @@
-# @encorp/llm-open-proxy
+# @encorp.ai/llm-open-proxy
 
 > One LLM request shape. Every provider.
 
@@ -23,11 +23,11 @@ and SSE streaming bridge.
 ## 30-second quickstart
 
 ```bash
-npm i @encorp/llm-open-proxy
+npm i @encorp.ai/llm-open-proxy
 ```
 
 ```ts
-import { sendAnthropicRequest } from '@encorp/llm-open-proxy';
+import { sendAnthropicRequest } from '@encorp.ai/llm-open-proxy';
 
 const { response, usage, warnings } = await sendAnthropicRequest({
   apiKey: process.env.ANTHROPIC_API_KEY!,
@@ -81,7 +81,7 @@ This library does exactly that, and only that.
 
 ## How it compares
 
-|                             | `@encorp/llm-open-proxy` | Vercel AI SDK | LangChain | OpenRouter / Portkey |
+|                             | `@encorp.ai/llm-open-proxy` | Vercel AI SDK | LangChain | OpenRouter / Portkey |
 |-----------------------------|:------------------------:|:-------------:|:---------:|:--------------------:|
 | OpenAI request shape in     | ✓                        | ✗ (own shape) | ✗         | ✓ (hosted)           |
 | Provider-native body out    | ✓                        | ✓ via SDKs    | ✓         | hosted               |
@@ -103,7 +103,7 @@ Pick whichever fits. They build on each other.
 ### Layer 1 — pure conversion
 
 ```ts
-import { convertChatRequest } from '@encorp/llm-open-proxy';
+import { convertChatRequest } from '@encorp.ai/llm-open-proxy';
 
 const { body, warnings } = convertChatRequest(canonical, 'anthropic');
 // `body` is Anthropic-shaped. POST it yourself.
@@ -112,7 +112,7 @@ const { body, warnings } = convertChatRequest(canonical, 'anthropic');
 ### Layer 2 — transport + response translation
 
 ```ts
-import { sendAnthropicRequest, sendChatRequest, GOOGLE_OPENAI_COMPAT_URL } from '@encorp/llm-open-proxy';
+import { sendAnthropicRequest, sendChatRequest, GOOGLE_OPENAI_COMPAT_URL } from '@encorp.ai/llm-open-proxy';
 
 // Anthropic
 const { response, usage, warnings } = await sendAnthropicRequest({ apiKey, body: canonical });
@@ -125,7 +125,7 @@ const { response } = await sendChatRequest({ apiKey, body, baseUrl: GOOGLE_OPENA
 ### Layer 3 — streaming
 
 ```ts
-import { streamAnthropicRequest } from '@encorp/llm-open-proxy';
+import { streamAnthropicRequest } from '@encorp.ai/llm-open-proxy';
 
 const { stream, getUsage } = await streamAnthropicRequest({ apiKey, body: canonical });
 // `stream` emits OpenAI-format SSE chunks. Pipe to the client unchanged.
@@ -174,7 +174,7 @@ convertChatRequest({
 ## Retry policy helper
 
 ```ts
-import { isRetryableUpstreamStatus, UpstreamError } from '@encorp/llm-open-proxy';
+import { isRetryableUpstreamStatus, UpstreamError } from '@encorp.ai/llm-open-proxy';
 
 try {
   return await sendChatRequest({ apiKey, body });
@@ -197,7 +197,7 @@ Each provider is exposed as a separate entry point so you only pull in
 what you use:
 
 ```ts
-import { anthropicChatConfig } from '@encorp/llm-open-proxy/providers/anthropic';
+import { anthropicChatConfig } from '@encorp.ai/llm-open-proxy/providers/anthropic';
 ```
 
 ## Tests

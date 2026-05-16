@@ -3,10 +3,10 @@ info:
   title: LLM Open Proxy — Canonical Chat Completions
   version: 0.1.0
   summary: |
-    OpenAI-canonical Chat Completions wire format used by `@encorp/llm-open-proxy`.
+    OpenAI-canonical Chat Completions wire format used by `@encorp.ai/llm-open-proxy`.
   description: |
     This document describes the **canonical request/response shape** that
-    `@encorp/llm-open-proxy` accepts and produces. The shape mirrors OpenAI's
+    `@encorp.ai/llm-open-proxy` accepts and produces. The shape mirrors OpenAI's
     Chat Completions API with three additions:
 
     * `provider_options` — per-provider escape hatch

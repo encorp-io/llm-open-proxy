@@ -7,7 +7,7 @@
     "start": "node --experimental-strip-types index.ts"
   },
   "dependencies": {
-    "@encorp/llm-open-proxy": "^0.1.0",
+    "@encorp.ai/llm-open-proxy": "^0.1.0",
     "express": "^5.0.0"
   }
 }

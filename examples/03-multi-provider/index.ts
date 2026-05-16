@@ -7,7 +7,7 @@ import {
   type CanonicalChatRequest,
   type CanonicalChatResponse,
   type ProviderName,
-} from '@encorp/llm-open-proxy';
+} from '@encorp.ai/llm-open-proxy';
 
 interface RouteEntry {
   provider: ProviderName;

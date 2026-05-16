@@ -1,5 +1,5 @@
 /**
- * @encorp/llm-open-proxy — OpenAI-canonical chat translator for LLM providers.
+ * @encorp.ai/llm-open-proxy — OpenAI-canonical chat translator for LLM providers.
  *
  * Three layers of API, pick whatever fits:
  *
@@ -7,7 +7,7 @@
  *     back a provider-shaped body. No HTTP, no I/O. Best for users who
  *     already have their own transport.
  *
- *       import { convertChatRequest } from '@encorp/llm-open-proxy';
+ *       import { convertChatRequest } from '@encorp.ai/llm-open-proxy';
  *       const { body, warnings } = convertChatRequest(canonical, 'anthropic');
  *
  *  2. Transport — convenience wrappers that handle HTTP + response
@@ -17,13 +17,13 @@
  *       import {
  *         sendChatRequest,           // OpenAI-shaped providers (openai/google/...)
  *         sendAnthropicRequest,      // Anthropic-shaped provider
- *       } from '@encorp/llm-open-proxy';
+ *       } from '@encorp.ai/llm-open-proxy';
  *
  *  3. Tree-shakeable submodules — import a single provider's adapter when
  *     you only care about one upstream:
  *
  *       import { anthropicChatConfig, toAnthropicRequest } from
- *         '@encorp/llm-open-proxy/providers/anthropic';
+ *         '@encorp.ai/llm-open-proxy/providers/anthropic';
  */
 
 // Public types

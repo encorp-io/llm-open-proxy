@@ -1,15 +1,20 @@
 name: Release
 
-# Publishes @encorp/llm-open-proxy to npm with build provenance.
+# Publishes @encorp.ai/llm-open-proxy to npm using **Trusted Publishing**
+# (OIDC). No NPM_TOKEN secret required.
 #
 # Trigger: create a GitHub Release whose tag matches `v<semver>` (e.g. v0.1.1).
 # The job verifies that the tag matches package.json `version` before publishing.
 #
-# Required repo setup:
-#   - NPM_TOKEN secret (Automation token, not Publish — Automation tokens
-#     support `--provenance`).
-#   - npm package "@encorp/llm-open-proxy" must be created on first run with
-#     `--access public` (already wired in `npm publish` below).
+# One-time setup on npmjs.com (see PUBLISHING.md):
+#   1. Org admin must approve the package under @encorp.ai.
+#   2. On the package settings page → "Trusted Publisher" → add a GitHub
+#      Actions publisher with:
+#        Repository:        encorp-io/llm-open-proxy
+#        Workflow filename: release.yml
+#        Environment:       (leave blank, or set to "npm" if you add one)
+#   3. After the first publish, provenance + Sigstore attestation appear
+#      automatically on the npm page.
 
 on:
   release:
@@ -18,7 +23,7 @@ on:
 
 permissions:
   contents: read
-  id-token: write   # required for npm provenance
+  id-token: write   # required for Trusted Publishing + provenance
 
 jobs:
   publish:
@@ -30,7 +35,11 @@ jobs:
         with:
           node-version: '22'
           registry-url: 'https://registry.npmjs.org'
-          cache: npm
+
+      # Trusted Publishing requires npm >= 11.5.1; Node 22 ships an older
+      # npm by default, so pin a known-good version.
+      - name: Upgrade npm
+        run: npm install -g npm@latest
 
       - name: Install dependencies
         run: |
@@ -54,7 +63,7 @@ jobs:
       - run: npm test
       - run: npm run build
 
-      - name: Publish to npm
+      # No NODE_AUTH_TOKEN: Trusted Publishing exchanges the GitHub OIDC
+      # token for a short-lived npm publish token automatically.
+      - name: Publish to npm (Trusted Publishing + provenance)
         run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

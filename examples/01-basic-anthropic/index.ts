@@ -1,4 +1,4 @@
-import { sendAnthropicRequest } from '@encorp/llm-open-proxy';
+import { sendAnthropicRequest } from '@encorp.ai/llm-open-proxy';
 
 const apiKey = process.env.ANTHROPIC_API_KEY;
 if (!apiKey) {

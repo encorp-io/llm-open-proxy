@@ -3,7 +3,7 @@
   "entryPoints": ["src/index.ts"],
   "out": "docs/typedoc",
   "tsconfig": "./tsconfig.json",
-  "name": "@encorp/llm-open-proxy",
+  "name": "@encorp.ai/llm-open-proxy",
   "readme": "README.md",
   "includeVersion": true,
   "excludePrivate": true,
