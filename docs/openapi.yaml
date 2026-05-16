@@ -162,7 +162,7 @@ components:
     bearer:
       type: http
       scheme: bearer
-      description: API key forwarded as `Authorization: Bearer <key>`.
+      description: 'API key forwarded as `Authorization: Bearer <key>`.'
 
   schemas:
     ProviderName:
