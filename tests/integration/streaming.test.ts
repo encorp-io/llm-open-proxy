@@ -100,6 +100,17 @@ for (const c of streamCases) {
     const { body } = convertChatRequest(
       {
         ...buildMinimalRequest(process.env[c.modelEnv] ?? c.defaultModel),
+        // Streaming bumps the budget from buildMinimalRequest's default 64
+        // to 256. Reason: in non-streaming mode the model produces its
+        // whole answer in one shot before the budget runs out — visible
+        // content survives unless thinking *plus* output exceeds the cap.
+        // In streaming mode, a thinking model can burn the entire budget
+        // on internal reasoning *before* emitting the first visible
+        // delta, so the stream finishes with finish_reason=length and
+        // zero content events. 256 leaves comfortable headroom for
+        // gemini-2.5-flash / o-series / similar without making the run
+        // expensive (still well under a cent for the whole suite).
+        max_completion_tokens: 256,
         stream: true,
       },
       c.provider,
@@ -114,10 +125,15 @@ for (const c of streamCases) {
     );
 
     const content = await collectSseContent(stream);
-    assert.ok(
-      content.length > 0,
-      `no content delta accumulated from ${c.providerLabel} stream`,
-    );
+    if (content.length === 0) {
+      // Failure diagnostic: usage usually arrives in the final chunk and
+      // tells us whether the stream burned its budget (length) or
+      // produced nothing for some other reason.
+      const usage = getUsage();
+      assert.fail(
+        `no content delta accumulated from ${c.providerLabel} stream\nfinal usage: ${JSON.stringify(usage)}\nmodel may have hit max_completion_tokens before emitting visible content (try bumping it or setting reasoning_effort: 'minimal')`,
+      );
+    }
 
     const usage = getUsage();
     assertUsage(usage);
