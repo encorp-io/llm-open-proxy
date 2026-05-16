@@ -1,0 +1,98 @@
+name: Bug report
+description: Translation bug, type-system bug, transport error, or unexpected behavior.
+labels: [bug, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. The more concrete you can
+        be — exact request payload, exact upstream response, package version —
+        the faster we can reproduce.
+
+  - type: input
+    id: version
+    attributes:
+      label: Package version
+      description: Output of `npm view @encorp.ai/llm-open-proxy version` or what's in your package-lock.
+      placeholder: e.g. 0.2.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: provider
+    attributes:
+      label: Affected provider(s)
+      multiple: true
+      options:
+        - openai
+        - anthropic
+        - google
+        - deepseek
+        - perplexity
+        - xai
+        - kimi
+        - "not provider-specific (engine / types / helpers)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Node 18+
+        - Node 20+
+        - Node 22+
+        - Node 24+
+        - Bun
+        - Deno
+        - Cloudflare Workers
+        - Vercel Edge
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened
+      description: What did you observe? What did you expect?
+      placeholder: |
+        Calling `sendAnthropicRequest` with a tool definition, the response
+        choices[0].message.tool_calls is empty even though the model
+        clearly called a tool.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal repro
+      description: Smallest code that triggers it. Strip API keys.
+      render: typescript
+      placeholder: |
+        import { sendAnthropicRequest } from '@encorp.ai/llm-open-proxy';
+        const { response } = await sendAnthropicRequest({ ... });
+        console.log(response.choices[0].message);
+    validations:
+      required: true
+
+  - type: textarea
+    id: upstream
+    attributes:
+      label: Upstream response (if relevant)
+      description: |
+        If the bug looks like the wire format is off, paste the raw upstream
+        JSON (you can get it from `UpstreamError.upstreamBody` or by
+        intercepting fetch). Strip credentials.
+      render: json
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: Logs, stack traces, hypotheses about the cause.
+    validations:
+      required: false

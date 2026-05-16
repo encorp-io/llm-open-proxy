@@ -8,9 +8,11 @@ Write your code once in OpenAI Chat Completions shape and forward it to
 with proper parameter mapping, message reshape, tool-call translation,
 and SSE streaming bridge.
 
+[![npm version](https://img.shields.io/npm/v/@encorp.ai/llm-open-proxy.svg)](https://www.npmjs.com/package/@encorp.ai/llm-open-proxy)
+[![CI](https://github.com/encorp-io/llm-open-proxy/actions/workflows/ci.yml/badge.svg)](https://github.com/encorp-io/llm-open-proxy/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-100%25-brightgreen)](#tests)
 [![Zero deps](https://img.shields.io/badge/runtime%20deps-0-blue)](#)
-[![License](https://img.shields.io/badge/license-MIT-blue)](#license)
+[![License](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 [![Node](https://img.shields.io/badge/node-%E2%89%A518-green)](#)
 
 **[📖 Docs site →](https://encorp-io.github.io/llm-open-proxy)** ·

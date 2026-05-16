@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/encorp-io/llm-open-proxy/security/advisories/new
+    about: Please report security issues privately, never as a public issue.
+  - name: Question / usage help
+    url: https://github.com/encorp-io/llm-open-proxy/discussions
+    about: For how-to questions and discussion, open a Discussion instead of an issue.

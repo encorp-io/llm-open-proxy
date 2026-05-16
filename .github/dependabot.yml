@@ -1,0 +1,41 @@
+version: 2
+updates:
+  # npm dependencies (only dev deps in this repo — runtime is zero-deps).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Sofia
+    open-pull-requests-limit: 5
+    labels:
+      - dependencies
+    commit-message:
+      prefix: "deps"
+      include: scope
+    groups:
+      # Group routine dev-dep patch/minor bumps into a single PR so we
+      # are not drowning in noise from typedoc / typescript / redocly
+      # ticking forward independently.
+      dev-deps:
+        applies-to: version-updates
+        update-types:
+          - patch
+          - minor
+
+  # GitHub Actions used by workflows in .github/workflows/.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "07:00"
+      timezone: Europe/Sofia
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - ci
+    commit-message:
+      prefix: "ci"
+      include: scope

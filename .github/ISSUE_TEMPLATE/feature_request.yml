@@ -1,0 +1,52 @@
+name: Feature request
+description: New provider, new translation surface, new helper, or an API improvement.
+labels: [enhancement, triage]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before opening: please skim CONTRIBUTING.md's "scope" section. This
+        library deliberately stays narrow (wire-format translation only).
+        Features outside that scope — retry strategies, observability,
+        gateway code — are intentionally pushed to the consumer.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What's the problem
+      description: |
+        Concrete pain you've hit. Bonus points for a code sketch showing
+        what's awkward today.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: |
+        What would the canonical (OpenAI) shape look like? What would the
+        provider-side translation look like? If you're adding a provider,
+        link to its API docs.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: |
+        Did you already try `provider_options` (the per-provider escape
+        hatch)? Does it cover this case? If not, why not?
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope-check
+    attributes:
+      label: Scope confirmation
+      options:
+        - label: This is a wire-format translation concern, not a transport / retry / observability feature.
+          required: true
+        - label: This does not require adding a runtime dependency.
+          required: true
