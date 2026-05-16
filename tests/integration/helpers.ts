@@ -5,11 +5,35 @@
  */
 
 import assert from 'node:assert/strict';
-import type {
-  CanonicalChatRequest,
-  CanonicalChatResponse,
-  TokenUsage,
+import {
+  UpstreamError,
+  type CanonicalChatRequest,
+  type CanonicalChatResponse,
+  type TokenUsage,
 } from '../../src/index.js';
+
+/**
+ * Wrap an async call so that an `UpstreamError` is reported as a
+ * test failure with the full upstream body inlined. Node's test runner
+ * truncates nested error properties to `[Object]` in its default
+ * reporter, which hides the actual upstream error message — this wrapper
+ * works around that by re-throwing as a plain Error whose message
+ * contains the body verbatim.
+ *
+ *   const result = await call(() => sendChatRequest({ ... }));
+ */
+export async function call<T>(fn: () => Promise<T>): Promise<T> {
+  try {
+    return await fn();
+  } catch (e) {
+    if (e instanceof UpstreamError) {
+      // UpstreamError.toString() now includes the body; surface it as
+      // the assertion message so the test runner prints it.
+      throw new Error(e.toString());
+    }
+    throw e;
+  }
+}
 
 /**
  * Build the smallest meaningful chat request: one system message, one
@@ -22,10 +46,11 @@ export function buildMinimalRequest(model: string): CanonicalChatRequest {
       { role: 'system', content: 'Reply with a single short word.' },
       { role: 'user', content: 'Hi' },
     ],
-    // 32 not 10: gives reasoning models (Gemini 2.5 Flash, o-series, etc.)
-    // some headroom for thinking tokens before any visible content is emitted.
-    // Still costs a fraction of a cent per call.
-    max_completion_tokens: 32,
+    // 64 not 10: reasoning models (Gemini 2.5 Flash, o-series, etc.)
+    // burn the early tokens on internal thinking. 64 gives enough headroom
+    // for them to emit at least one visible token without blowing up the
+    // bill. A full run of the suite is still well under a cent.
+    max_completion_tokens: 64,
   };
 }
 
@@ -88,6 +113,76 @@ export function skipIfMissingKey(envName: string): { skip?: string } {
     return { skip: `set ${envName} to run this test` };
   }
   return {};
+}
+
+/**
+ * Definition of a tiny weather tool used by the tool-calling integration
+ * tests. Each provider gets the same tool — the test verifies that the
+ * library forwards it correctly and that the model's tool_call response
+ * round-trips back to canonical (OpenAI) shape.
+ */
+export const WEATHER_TOOL = {
+  type: 'function' as const,
+  function: {
+    name: 'get_weather',
+    description: 'Look up the current weather for a city. Always call this when the user asks about weather.',
+    parameters: {
+      type: 'object',
+      properties: {
+        city: {
+          type: 'string',
+          description: 'City name, e.g. "Sofia" or "Berlin".',
+        },
+      },
+      required: ['city'],
+    },
+  },
+};
+
+/**
+ * Assert that the model returned a tool_call to `expectedName` and that
+ * the JSON-stringified arguments mention `expectedCity` (case-insensitive
+ * substring match, since models phrase the city slightly differently —
+ * e.g. "Sofia, Bulgaria" or just "Sofia").
+ */
+export function assertToolCall(
+  response: CanonicalChatResponse,
+  expectedName: string,
+  expectedCity: string,
+): void {
+  const message = response.choices[0]?.message;
+  assert.ok(message, 'choice.message missing');
+  const toolCalls = message.tool_calls;
+  assert.ok(
+    Array.isArray(toolCalls) && toolCalls.length > 0,
+    `expected tool_calls array, got: ${JSON.stringify(message, null, 2)}`,
+  );
+
+  const call = toolCalls[0]!;
+  assert.equal(call.type, 'function', 'tool_call.type !== function');
+  assert.equal(
+    call.function.name,
+    expectedName,
+    `tool_call.function.name: expected "${expectedName}", got "${call.function.name}"`,
+  );
+
+  // Parse args and check the city slot is filled. Models may return either
+  // a JSON-string or an already-parsed object on some providers — handle both.
+  let args: unknown;
+  try {
+    args = typeof call.function.arguments === 'string'
+      ? JSON.parse(call.function.arguments)
+      : call.function.arguments;
+  } catch (e) {
+    assert.fail(`tool_call.function.arguments is not valid JSON: ${call.function.arguments}`);
+  }
+
+  const city = (args as { city?: unknown }).city;
+  assert.equal(typeof city, 'string', `args.city is not a string: ${JSON.stringify(args)}`);
+  assert.ok(
+    (city as string).toLowerCase().includes(expectedCity.toLowerCase()),
+    `args.city does not include "${expectedCity}": got "${city as string}"`,
+  );
 }
 
 /**

@@ -11,8 +11,8 @@ catch.
 - Tests are skipped automatically when the relevant API key env var is
   unset. Run them only against the providers you have keys for.
 - Each test deliberately stays tiny (system prompt + 1-line user prompt,
-  `max_completion_tokens=32`). Running the whole suite once against
-  every provider should cost a fraction of a cent. The 32-token cap
+  `max_completion_tokens=64`). Running the whole suite once against
+  every provider should cost a fraction of a cent. The 64-token cap
   gives reasoning models (Gemini 2.5 Flash, o-series, etc.) some
   headroom for thinking tokens before they emit visible output.
 - They are **not** run in CI by default. The repo's GitHub Actions
@@ -41,8 +41,9 @@ Each test picks a cheap, fast model by default. To override:
 ```bash
 ANTHROPIC_MODEL=claude-opus-4-6 npm run test:integration
 OPENAI_MODEL=gpt-4o-mini       npm run test:integration
-GOOGLE_MODEL=gemini-2.0-flash  npm run test:integration
+GOOGLE_MODEL=gemini-2.5-flash  npm run test:integration
 DEEPSEEK_MODEL=deepseek-chat   npm run test:integration
+DEEPSEEK_REASONER_MODEL=deepseek-reasoner  npm run test:integration   # thinking variant used by reasoning.test.ts
 PERPLEXITY_MODEL=sonar         npm run test:integration
 XAI_MODEL=grok-3-mini          npm run test:integration
 KIMI_MODEL=kimi-k2-0905-preview npm run test:integration
@@ -54,14 +55,33 @@ current.
 
 ## What each test asserts
 
+**Basic smoke tests** (`<provider>.test.ts`):
 - The HTTP call succeeds (no `UpstreamError`).
 - The returned `response` is OpenAI-shape (has `choices[0].message.content`).
 - `usage.prompt_tokens`, `usage.completion_tokens`, `usage.total_tokens`
   are all non-negative numbers.
-- For Anthropic specifically: the message reshape (system extraction,
-  tool-call translation) round-trips correctly.
+- For Anthropic specifically: the message reshape (system extraction)
+  round-trips correctly.
 - For streaming: SSE chunks arrive, content accumulates, the final
   `getUsage()` reports non-zero tokens.
+
+**Tool calling** (`tools.test.ts`):
+- Given a `get_weather(city)` tool definition and a question about
+  weather, the model returns a `tool_calls` array in canonical (OpenAI)
+  shape — proving the request-side tool translation and the
+  response-side `tool_use` → `tool_calls` round-trip both work.
+- `finish_reason` maps to `'tool_calls'` (Anthropic specifically maps
+  its native `tool_use` stop reason).
+- Starts with Anthropic (the hardest translation); other providers can
+  be added by copying the test verbatim and swapping the transport.
+
+**Reasoning** (`reasoning.test.ts`):
+- For `deepseek-reasoner`, the canonical `choices[0].message.reasoning_content`
+  field is populated with a non-empty string — proving the only
+  reasoning surface that's currently exposed in canonical shape
+  round-trips end-to-end.
+- TODO: when Anthropic thinking-block preservation lands in
+  `toCanonicalResponse`, add a sibling test for Anthropic here.
 
 These are **smoke tests**, not behavioral tests. If a model's response
 is technically correct but unexpected (e.g. it ignores the system
