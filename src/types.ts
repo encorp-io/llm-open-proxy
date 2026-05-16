@@ -114,6 +114,15 @@ export interface CanonicalChatResponse {
       role: 'assistant';
       content: string | null;
       tool_calls?: ChatToolCall[];
+      /**
+       * DeepSeek `deepseek-reasoner` returns the model's chain of thought
+       * here, alongside the visible `content`. The transport layer passes
+       * it through verbatim. Other providers either do not expose
+       * reasoning at all (OpenAI o-series), expose it under a different
+       * wire format that this library does not currently surface
+       * (Anthropic thinking blocks, Gemini thoughts), or simply omit it.
+       */
+      reasoning_content?: string;
     };
     finish_reason: 'stop' | 'length' | 'tool_calls' | 'content_filter' | string;
   }>;
