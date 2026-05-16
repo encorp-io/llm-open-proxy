@@ -186,6 +186,85 @@ export function assertToolCall(
 }
 
 /**
+ * Tiny 1x1 transparent PNG, base64-encoded as a data URI. Used by the
+ * multimodal integration tests to verify the library forwards
+ * `image_url` content parts correctly without making us depend on an
+ * external URL that could rot.
+ *
+ * Some vision models reject single-pixel inputs as "too small to
+ * describe"; that's fine for our purposes because we're testing the
+ * *wire-format translation*, not the model's vision quality. The test
+ * passes if the call succeeds and the response is OpenAI-shape — we
+ * don't assert on the response text.
+ */
+export const TINY_IMAGE_DATA_URI =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=';
+
+/**
+ * Collect all tool_call deltas from an OpenAI-format SSE stream, keyed
+ * by call index. Returns an array of fully-assembled tool calls. Used
+ * by the streaming-tools tests to verify that the library accumulates
+ * tool_call argument fragments across SSE chunks without corruption —
+ * a classic place for off-by-one or partial-JSON bugs.
+ */
+export async function collectSseToolCalls(
+  stream: ReadableStream<Uint8Array>,
+): Promise<Array<{ id?: string; name?: string; arguments: string }>> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+  const acc = new Map<number, { id?: string; name?: string; arguments: string }>();
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const payload = line.slice(6).trim();
+        if (payload === '[DONE]' || payload === '') continue;
+
+        try {
+          const json = JSON.parse(payload) as {
+            choices?: Array<{
+              delta?: {
+                tool_calls?: Array<{
+                  index: number;
+                  id?: string;
+                  function?: { name?: string; arguments?: string };
+                }>;
+              };
+            }>;
+          };
+          const calls = json.choices?.[0]?.delta?.tool_calls;
+          if (!Array.isArray(calls)) continue;
+          for (const tc of calls) {
+            const existing = acc.get(tc.index) ?? { arguments: '' };
+            if (tc.id !== undefined) existing.id = tc.id;
+            if (tc.function?.name !== undefined) existing.name = tc.function.name;
+            if (tc.function?.arguments !== undefined) {
+              existing.arguments += tc.function.arguments;
+            }
+            acc.set(tc.index, existing);
+          }
+        } catch {
+          // ignore non-JSON keep-alives
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return [...acc.entries()].sort(([a], [b]) => a - b).map(([, v]) => v);
+}
+
+/**
  * Collect all text content from an OpenAI-format SSE stream. Returns
  * the concatenated content delta payload across all chunks.
  */

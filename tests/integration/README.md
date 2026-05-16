@@ -53,35 +53,83 @@ If a model id is rejected by the upstream, the test fails with the
 upstream's exact error message — useful for keeping the defaults
 current.
 
-## What each test asserts
+## What's covered
 
-**Basic smoke tests** (`<provider>.test.ts`):
-- The HTTP call succeeds (no `UpstreamError`).
-- The returned `response` is OpenAI-shape (has `choices[0].message.content`).
-- `usage.prompt_tokens`, `usage.completion_tokens`, `usage.total_tokens`
-  are all non-negative numbers.
-- For Anthropic specifically: the message reshape (system extraction)
-  round-trips correctly.
-- For streaming: SSE chunks arrive, content accumulates, the final
-  `getUsage()` reports non-zero tokens.
+Per-provider smoke files cover the basic round-trip; cross-cutting
+concern files cover one specific translation surface across many
+providers. The matrix as of the latest commit:
 
-**Tool calling** (`tools.test.ts`):
-- Given a `get_weather(city)` tool definition and a question about
-  weather, the model returns a `tool_calls` array in canonical (OpenAI)
-  shape — proving the request-side tool translation and the
-  response-side `tool_use` → `tool_calls` round-trip both work.
-- `finish_reason` maps to `'tool_calls'` (Anthropic specifically maps
-  its native `tool_use` stop reason).
-- Starts with Anthropic (the hardest translation); other providers can
-  be added by copying the test verbatim and swapping the transport.
+| Provider   | Basic | Stream | Tools | Round-trip | Stream+tools | Image | json_object | json_schema | Reasoning |
+| ---------- | :---: | :----: | :---: | :--------: | :----------: | :---: | :---------: | :---------: | :-------: |
+| Anthropic  | ✓¹    | ✓      | ✓     | ✓          | ✓            | ✓     | —²          | —²          | —³        |
+| OpenAI     | ✓     | ✓      | ✓     | ✓          | ✓            | ✓     | ✓           | ✓           | —⁴        |
+| Google     | ✓     | ✓      | ✓     | —          | —            | —     | ✓           | —           | —         |
+| DeepSeek   | ✓     | ✓      | ✓     | —          | —            | —     | ✓           | —           | ✓ (reasoner) |
+| Perplexity | ✓     | ✓⁵     | ✓⁶    | —          | —            | —     | —           | —           | —         |
+| xAI        | ✓     | ✓      | ✓     | —          | —            | —     | —           | —           | —         |
+| Kimi       | ✓     | ✓      | ✓     | —          | —            | —     | —           | —           | —         |
 
-**Reasoning** (`reasoning.test.ts`):
-- For `deepseek-reasoner`, the canonical `choices[0].message.reasoning_content`
-  field is populated with a non-empty string — proving the only
-  reasoning surface that's currently exposed in canonical shape
-  round-trips end-to-end.
-- TODO: when Anthropic thinking-block preservation lands in
-  `toCanonicalResponse`, add a sibling test for Anthropic here.
+¹ Anthropic basic covers three flows: minimal request, system message
+  extraction, streaming SSE translation (the heaviest single test).
+
+² Anthropic's structured output is a separate `output_config` block, not
+  the canonical `response_format`. Not currently plumbed through.
+
+³ Anthropic returns thinking content blocks but the library currently
+  filters them in `toCanonicalResponse`. A sibling test will land
+  alongside the fix.
+
+⁴ OpenAI o-series reasoning is never exposed by the API.
+
+⁵ Perplexity streams content deltas correctly but does NOT emit a final
+  usage chunk despite `stream_options.include_usage`. The test logs a
+  warning rather than failing — a real translation regression would
+  manifest as missing content deltas, not missing usage.
+
+⁶ Perplexity has no function calling; the test asserts a 4xx
+  `UpstreamError` (it would catch a regression where the library
+  silently drops the `tools` field instead).
+
+### What each cross-cutting file proves
+
+- **`tools.test.ts`** — `tools[]` + `tool_choice` reach the model; the
+  model's tool call round-trips back to canonical `tool_calls[]` with
+  parseable JSON arguments; `finish_reason` becomes `'tool_calls'`.
+  For Anthropic this also tests the `tool_use` content block ↔
+  canonical translation in both directions.
+
+- **`tool-result.test.ts`** — full agent loop. Turn 1 asks a question
+  that requires a tool; turn 2 feeds the tool result back as a
+  `role: tool` message and the model must produce a final answer that
+  incorporates it. For Anthropic this is the only test that exercises
+  the assistant-with-tool_calls and `role: tool` message translations
+  together — id matching across turns is the most likely place for a
+  bug to silently lose context.
+
+- **`streaming.test.ts`** — `streamChatRequest` against every
+  OpenAI-shape provider. Drains the SSE stream, accumulates `delta.content`,
+  checks the final `getUsage()`.
+
+- **`streaming-tools.test.ts`** — streaming + tool calls in one shot.
+  The hardest combination: `function.arguments` arrives as JSON
+  fragments split across SSE chunks. The test accumulates the fragments
+  and asserts they concatenate into valid JSON. For Anthropic this
+  doubly tests the native event translation
+  (`content_block_start` / `input_json_delta` / `content_block_stop`
+  → OpenAI tool_call deltas).
+
+- **`multimodal.test.ts`** — `image_url` content parts. Data URI gets
+  parsed and (for Anthropic) translated into a base64 `image` source
+  block. Uses a 1×1 transparent PNG so there's no external dependency.
+
+- **`json-mode.test.ts`** — `response_format: { type: 'json_object' }`
+  across providers that support it, plus a strict `json_schema` test
+  that asserts the model returned JSON matching every required field
+  with the right types.
+
+- **`reasoning.test.ts`** — `deepseek-reasoner` populates
+  `choices[0].message.reasoning_content` with a non-empty string. The
+  only provider currently surfacing reasoning in canonical shape.
 
 These are **smoke tests**, not behavioral tests. If a model's response
 is technically correct but unexpected (e.g. it ignores the system
