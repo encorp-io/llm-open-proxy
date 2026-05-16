@@ -1,0 +1,40 @@
+name: Release Please
+
+# Watches the default branch for conventional commits and opens/updates
+# a "Release PR" that bumps package.json + CHANGELOG.md. Merging that PR
+# creates a git tag and a GitHub Release. The Release event then fires
+# `.github/workflows/release.yml`, which publishes to npm with provenance
+# via Trusted Publishing.
+#
+# Conventional commit recipes:
+#   fix: <msg>           → patch  (0.1.0 → 0.1.1)
+#   feat: <msg>          → minor  (0.1.0 → 0.2.0)
+#   feat!: <msg>         → major  (0.1.0 → 1.0.0)
+#   BREAKING CHANGE: …   → major  (in commit body, any type)
+#   chore:, docs:, refactor:, test:, ci:, build:, perf:, style:
+#                        → no version bump, but `perf:` and `refactor:` land in CHANGELOG
+#
+# Scope is optional, e.g. `feat(anthropic): support tool_choice=any`.
+#
+# A commit with no recognized prefix is silently ignored by release-please
+# (no bump, no CHANGELOG entry).
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write       # create branches, tags, releases
+  pull-requests: write  # open/update the Release PR
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # Uses release-please-config.json + .release-please-manifest.json
+          # in the repo root.
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

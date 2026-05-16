@@ -53,34 +53,64 @@ required reviewers, then:
 
 We skip this by default for a smoother first release.
 
-## Cutting a release
+## Cutting a release — automated via release-please
 
-```bash
-# 1. Bump version in package.json (semver). Examples:
-npm version patch    # 0.1.0 → 0.1.1
-npm version minor    # 0.1.0 → 0.2.0
-npm version major    # 0.1.0 → 1.0.0
-# This creates a commit + tag `v<version>`.
+Day-to-day you **never bump versions by hand**. The flow is:
 
-# 2. Push commit + tag
-git push --follow-tags
+1. **Commit with [Conventional Commits](https://www.conventionalcommits.org/)**
+   prefixes on `main` (or in PRs that merge to `main`):
 
-# 3. Create a GitHub Release pointing at that tag
-gh release create v0.1.1 --generate-notes
-# Or do it via the GitHub UI: Releases → Draft a new release.
-```
+   | Prefix              | Bump  | Example                                         |
+   | ------------------- | ----- | ----------------------------------------------- |
+   | `fix:`              | patch | `fix: clamp Anthropic temperature at 1.0`       |
+   | `feat:`             | minor | `feat: support tool_choice=any for Anthropic`   |
+   | `feat!:` / `BREAKING CHANGE:` | major | `feat!: rename convertChatRequest → translate` |
+   | `perf:` `refactor:` `docs:` `deps:` | no bump, but lands in CHANGELOG |        |
+   | `chore:` `test:` `ci:` `build:` `style:` | hidden | (no bump, no CHANGELOG entry) |     |
 
-When the release is **published** (not draft), `.github/workflows/release.yml`
-fires:
+   Scope is optional: `feat(google): add safety_settings passthrough`.
 
-1. Re-runs typecheck + tests + build
-2. Verifies `package.json.version` matches the tag
-3. Runs `npm publish --provenance --access public`
+2. **`release-please.yml`** sees the new commits and opens (or updates) a
+   PR titled **"chore(main): release X.Y.Z"** that:
+   - Bumps `package.json` version
+   - Prepends a CHANGELOG.md entry grouped by section
+   - Updates `.release-please-manifest.json`
 
-The publish step authenticates via OIDC; no token is read from secrets.
+3. **Merge the Release PR** when you're ready to ship. release-please then:
+   - Creates a git tag `vX.Y.Z` on the merge commit
+   - Creates a GitHub Release with the CHANGELOG entry as release notes
+
+4. **`release.yml`** fires on the Release published event and:
+   - Re-runs typecheck + tests + build
+   - Verifies the tag matches package.json version
+   - Runs `npm publish --provenance --access public` (auth via Trusted Publishing OIDC)
+
 After it succeeds, the package page on npmjs.com shows a green
 **"Published with provenance"** badge linking back to the exact GitHub
 Actions run that built it.
+
+### One-time GitHub setting
+
+release-please opens PRs from `GITHUB_TOKEN`. Some orgs disable that by
+default — if the workflow run fails with `GitHub Actions is not permitted
+to create or approve pull requests`, go to:
+
+**Repo → Settings → Actions → General → Workflow permissions** →
+✅ "Allow GitHub Actions to create and approve pull requests".
+
+### Manual escape hatch
+
+If you ever need to ship without going through release-please (e.g. an
+emergency patch on an older line), you can still trigger `release.yml`
+directly via `workflow_dispatch` after creating a tag + Release by hand:
+
+```bash
+npm version patch          # bumps package.json + creates tag + commit
+git push --follow-tags
+gh release create v0.1.2 --generate-notes
+```
+
+But for normal work, just use conventional commits and merge the Release PR.
 
 ## Verifying the first publish
 
