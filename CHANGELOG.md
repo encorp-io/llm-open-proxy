@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.2.2](https://github.com/encorp-io/llm-open-proxy/compare/@encorp.ai/llm-open-proxy-v0.2.1...@encorp.ai/llm-open-proxy-v0.2.2) (2026-05-16)
+
+
+### Documentation
+
+* add community standards files (SECURITY, CONTRIBUTING, CoC, issue/PR templates, dependabot) ([6b04c9a](https://github.com/encorp-io/llm-open-proxy/commit/6b04c9a0529ea822412bf8c70ffded50862b01b7))
+
+
+### Dependencies
+
+* **deps-dev:** bump @redocly/cli from 1.34.14 to 2.30.6 ([95393d4](https://github.com/encorp-io/llm-open-proxy/commit/95393d4e1d25e0268e0240ec0865eae2ddf9e4a7))
+
 ## [0.2.1](https://github.com/encorp-io/llm-open-proxy/compare/@encorp.ai/llm-open-proxy-v0.2.0...@encorp.ai/llm-open-proxy-v0.2.1) (2026-05-16)
 
 
