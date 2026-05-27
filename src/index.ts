@@ -115,6 +115,7 @@ import {
   toAnthropicRequest as _toAnthropic,
   type AnthropicRequest as _AnthropicRequest,
 } from './providers/anthropic.js';
+import { stripReasoningContent } from './helpers.js';
 
 export interface ConvertResult {
   /** The upstream-ready body. For Anthropic this is the Messages API shape. */
@@ -136,8 +137,12 @@ export function convertChatRequest(
     return { body: request as unknown as Record<string, unknown>, warnings };
   }
 
+  const prepared = provider === 'deepseek'
+    ? canonical
+    : { ...canonical, messages: stripReasoningContent(canonical.messages) };
+
   const { config, canonicalProvider } = _resolve(provider);
-  return _transform(canonical, config, canonicalProvider);
+  return _transform(prepared, config, canonicalProvider);
 }
 
 // Internal-only re-export kept so the convert helper has access without
