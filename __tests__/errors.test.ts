@@ -17,6 +17,12 @@ describe('UpstreamError', () => {
   it('defaults upstreamBody to an empty object when omitted', () => {
     const err = new UpstreamError('boom', 500);
     assert.deepEqual(err.upstreamBody, {});
+    assert.equal(err.retryAfterMs, undefined);
+  });
+
+  it('carries an optional retryAfterMs back-off hint', () => {
+    const err = new UpstreamError('slow down', 429, {}, 1500);
+    assert.equal(err.retryAfterMs, 1500);
   });
 
   it('toString() renders the upstream body inline for diagnostics', () => {

@@ -735,12 +735,73 @@ describe('sendAnthropicRequest', () => {
     assert.equal(headers['anthropic-version'], '2099-01-01');
   });
 
+  it('merges extra headers and keeps the default x-api-key when none carries a credential', async () => {
+    installFetchMock(async () =>
+      jsonResponse({
+        id: 'm',
+        type: 'message',
+        role: 'assistant',
+        content: [{ type: 'text', text: '' }],
+        model: 'claude',
+        stop_reason: 'end_turn',
+        usage: { input_tokens: 1, output_tokens: 0 },
+      }),
+    );
+    await sendAnthropicRequest({
+      apiKey: 'k',
+      body: base,
+      headers: { 'anthropic-beta': 'x-2099' },
+    });
+    const headers = calls[0].init.headers as Record<string, string>;
+    assert.equal(headers['x-api-key'], 'k');
+    assert.equal(headers['anthropic-beta'], 'x-2099');
+  });
+
+  for (const authHeader of ['Authorization', 'api-key', 'X-Api-Key']) {
+    it(`omits the default x-api-key when headers carry ${authHeader}`, async () => {
+      installFetchMock(async () =>
+        jsonResponse({
+          id: 'm',
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'text', text: '' }],
+          model: 'claude',
+          stop_reason: 'end_turn',
+          usage: { input_tokens: 1, output_tokens: 0 },
+        }),
+      );
+      await sendAnthropicRequest({
+        apiKey: 'ignored',
+        body: base,
+        headers: { [authHeader]: 'cred' },
+      });
+      const headers = calls[0].init.headers as Record<string, string>;
+      assert.equal(headers[authHeader], 'cred');
+      if (authHeader !== 'X-Api-Key') assert.equal(headers['x-api-key'], undefined);
+      assert.ok(!Object.values(headers).includes('ignored'), 'apiKey must not leak into headers');
+    });
+  }
+
   it('throws UpstreamError with message from upstream error body', async () => {
     installFetchMock(async () => jsonResponse({ error: { message: 'overloaded' } }, 529));
     await assert.rejects(
       sendAnthropicRequest({ apiKey: 'k', body: base }),
       (err: unknown) =>
         err instanceof UpstreamError && err.statusCode === 529 && err.message === 'overloaded',
+    );
+  });
+
+  it('captures the retry-after back-off hint on UpstreamError', async () => {
+    installFetchMock(
+      async () =>
+        new Response(JSON.stringify({ error: { message: 'overloaded' } }), {
+          status: 529,
+          headers: { 'Content-Type': 'application/json', 'retry-after-ms': '250' },
+        }),
+    );
+    await assert.rejects(
+      sendAnthropicRequest({ apiKey: 'k', body: base }),
+      (err: unknown) => err instanceof UpstreamError && err.retryAfterMs === 250,
     );
   });
 

@@ -167,7 +167,7 @@ components:
   schemas:
     ProviderName:
       type: string
-      enum: [openai, anthropic, google, deepseek, perplexity, xai, kimi]
+      enum: [openai, anthropic, google, deepseek, perplexity, xai, kimi, foundry]
 
     Role:
       type: string
@@ -303,12 +303,14 @@ components:
           x-provider-support:
             anthropic: clamped to ≤ 1
             openai: dropped on gpt-5 / o-series
+            foundry: dropped on gpt-5 / o-series deployments
         top_p:
           type: number
           minimum: 0
           maximum: 1
           x-provider-support:
             openai: dropped on gpt-5 / o-series
+            foundry: dropped on gpt-5 / o-series deployments
         top_k:
           type: integer
           x-provider-support:
@@ -317,6 +319,7 @@ components:
             openai: dropped
             deepseek: dropped
             perplexity: dropped
+            foundry: dropped
         n:
           type: integer
           minimum: 1
@@ -324,10 +327,13 @@ components:
             anthropic: dropped (n=1 only)
             deepseek: dropped (n=1 only)
             perplexity: dropped (n=1 only)
+            foundry: dropped on the Model Inference API (n=1 only)
         max_completion_tokens:
           type: integer
           minimum: 1
-          description: Preferred. Renamed to `max_tokens` for Anthropic / DeepSeek / Perplexity.
+          description: >-
+            Preferred. Renamed to `max_tokens` for Anthropic / DeepSeek / Perplexity
+            and for Foundry's Model Inference API.
         max_tokens:
           type: integer
           minimum: 1
@@ -340,18 +346,21 @@ components:
               items: { type: string }
           x-provider-support:
             anthropic: renamed to `stop_sequences`
+            foundry: wrapped as an array on the Model Inference API
         frequency_penalty:
           type: number
           x-provider-support:
             anthropic: dropped
             deepseek: dropped (deprecated v4)
             perplexity: dropped
+            foundry: dropped on gpt-5 / o-series deployments
         presence_penalty:
           type: number
           x-provider-support:
             anthropic: dropped
             deepseek: dropped (deprecated v4)
             perplexity: dropped
+            foundry: dropped on gpt-5 / o-series deployments
         logit_bias:
           type: object
           additionalProperties: { type: number }
@@ -360,6 +369,7 @@ components:
             google: dropped
             deepseek: dropped
             perplexity: dropped
+            foundry: dropped on reasoning deployments and the Model Inference API
         seed:
           type: integer
           x-provider-support:
@@ -371,8 +381,15 @@ components:
           x-provider-support:
             anthropic: routed to `metadata.user_id`
             deepseek: renamed to `user_id`
-        logprobs: { type: boolean }
-        top_logprobs: { type: integer }
+            foundry: dropped on the Model Inference API
+        logprobs:
+          type: boolean
+          x-provider-support:
+            foundry: dropped on reasoning deployments and the Model Inference API
+        top_logprobs:
+          type: integer
+          x-provider-support:
+            foundry: dropped on reasoning deployments and the Model Inference API
         response_format:
           $ref: '#/components/schemas/ResponseFormat'
           x-provider-support:
@@ -393,12 +410,14 @@ components:
             anthropic: dropped (uses `disable_parallel_tool_use`)
             deepseek: dropped
             perplexity: dropped
+            foundry: dropped on the Model Inference API
         reasoning_effort:
           type: string
           enum: [minimal, low, medium, high]
           x-provider-support:
             anthropic: mapped to `thinking.budget_tokens`
             deepseek: mapped to `thinking.reasoning_effort`
+            foundry: dropped on GA dated api-versions and the Model Inference API
         stream: { type: boolean }
         stream_options:
           type: object

@@ -11,12 +11,16 @@
  * collapsing it to `[Object]`. `.message` itself stays clean (just the
  * passed-in string) — programmatic equality checks against the message
  * keep working.
+ *
+ * `retryAfterMs` carries the upstream's back-off hint (`retry-after-ms` or
+ * `retry-after` response header) when one was sent — typically on 429/503.
  */
 export class UpstreamError extends Error {
   constructor(
     message: string,
     public readonly statusCode: number,
     public readonly upstreamBody: unknown = {},
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'UpstreamError';

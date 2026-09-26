@@ -259,6 +259,20 @@ describe('sendChatRequest — error paths', () => {
     );
   });
 
+  it('captures the retry-after back-off hint on UpstreamError', async () => {
+    installFetchMock(
+      async () =>
+        new Response(JSON.stringify({ error: { message: 'slow down' } }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'retry-after': '3' },
+        }),
+    );
+    await assert.rejects(
+      sendChatRequest({ apiKey: 'k', body: asBody(base) }),
+      (err: unknown) => err instanceof UpstreamError && err.retryAfterMs === 3000,
+    );
+  });
+
   it('throws UpstreamError with default message when error body is unparseable', async () => {
     installFetchMock(
       async () =>

@@ -18,11 +18,16 @@ import type {
 import type { ProviderParamConfig } from '../engine.js';
 import { resolveMaxCompletionTokens, modelMatches } from '../helpers.js';
 import { UpstreamError } from '../errors.js';
+import { parseRetryAfterMs } from '../retry.js';
 
 export const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 
-/** Models that reject `temperature` and `top_p` (only the model default is accepted). */
-const SAMPLING_LOCKED_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4'] as const;
+/**
+ * Reasoning-model families that reject `temperature` and `top_p` (only the
+ * model default is accepted). Also used by the Microsoft Foundry adapter,
+ * which serves the same Azure OpenAI models.
+ */
+export const SAMPLING_LOCKED_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4'] as const;
 
 export const openaiChatConfig: ProviderParamConfig = {
   temperature: {
@@ -189,7 +194,7 @@ async function openaiFetch(
     const errorBody = await res.json().catch(() => ({} as unknown));
     const message =
       (errorBody as { error?: { message?: string } })?.error?.message ?? `Upstream error ${res.status}`;
-    throw new UpstreamError(message, res.status, errorBody);
+    throw new UpstreamError(message, res.status, errorBody, parseRetryAfterMs(res.headers));
   }
 
   return res;
