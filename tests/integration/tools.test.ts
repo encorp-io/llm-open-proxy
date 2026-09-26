@@ -36,6 +36,7 @@ import {
   assertUsage,
   skipIfMissingKey,
   call,
+  DEFAULT_OPENAI_MODEL,
 } from './helpers.js';
 
 const WEATHER_PROMPT: CanonicalChatRequest['messages'] = [
@@ -89,7 +90,7 @@ const openAIShapeToolCases: OpenAIShapeToolCase[] = [
     providerLabel: 'openai',
     provider: 'openai',
     modelEnv: 'OPENAI_MODEL',
-    defaultModel: 'gpt-4o-mini',
+    defaultModel: DEFAULT_OPENAI_MODEL,
     baseUrl: undefined,
   },
   {

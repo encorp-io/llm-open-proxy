@@ -32,6 +32,7 @@ import {
   assertUsage,
   skipIfMissingKey,
   call,
+  DEFAULT_OPENAI_MODEL,
 } from './helpers.js';
 
 const VISION_PROMPT = [
@@ -64,13 +65,15 @@ test('anthropic — accepts image_url data URI and translates to image source bl
 });
 
 test('openai — accepts image_url data URI on a vision-capable model', skipIfMissingKey('OPENAI_API_KEY'), async () => {
-  // gpt-4o-mini accepts image inputs; o-mini-only models do not. Override
-  // via OPENAI_MODEL if you want to point at a different vision model.
+  // The default model accepts image inputs. Override via OPENAI_MODEL to
+  // point at a different vision-capable model. 512 not 64: reasoning models
+  // (gpt-6) think about the image first — ~130-200 reasoning tokens — and
+  // return empty content with finish_reason "length" on a 64-token cap.
   const { body } = convertChatRequest(
     {
-      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+      model: process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL,
       messages: VISION_PROMPT,
-      max_completion_tokens: 64,
+      max_completion_tokens: 512,
     },
     'openai',
   );

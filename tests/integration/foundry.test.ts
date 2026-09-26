@@ -29,12 +29,13 @@ import {
   buildMinimalRequest,
   collectSseContent,
   call,
+  DEFAULT_OPENAI_MODEL,
 } from './helpers.js';
 import type { CanonicalChatRequest } from '../../src/index.js';
 
 const endpoint = process.env.FOUNDRY_ENDPOINT ?? '';
 const apiKey = process.env.FOUNDRY_API_KEY ?? '';
-const model = process.env.FOUNDRY_MODEL ?? 'gpt-4o-mini';
+const model = process.env.FOUNDRY_MODEL ?? DEFAULT_OPENAI_MODEL;
 const claudeModel = process.env.FOUNDRY_CLAUDE_MODEL ?? '';
 const reasonerModel = process.env.FOUNDRY_REASONER_MODEL ?? '';
 

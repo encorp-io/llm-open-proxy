@@ -40,14 +40,14 @@ Each test picks a cheap, fast model by default. To override:
 
 ```bash
 ANTHROPIC_MODEL=claude-opus-4-6 npm run test:integration
-OPENAI_MODEL=gpt-4o-mini       npm run test:integration
+OPENAI_MODEL=gpt-6-sol         npm run test:integration
 GOOGLE_MODEL=gemini-2.5-flash  npm run test:integration
 DEEPSEEK_MODEL=deepseek-chat   npm run test:integration
 DEEPSEEK_REASONER_MODEL=deepseek-reasoner  npm run test:integration   # thinking variant used by reasoning.test.ts
 PERPLEXITY_MODEL=sonar         npm run test:integration
 XAI_MODEL=grok-3-mini          npm run test:integration
 KIMI_MODEL=kimi-k2-0905-preview npm run test:integration
-FOUNDRY_MODEL=gpt-4o-mini      npm run test:integration   # Foundry deployment name
+FOUNDRY_MODEL=gpt-6-sol        npm run test:integration   # Foundry deployment name
 ```
 
 Foundry needs `FOUNDRY_ENDPOINT` + `FOUNDRY_API_KEY`. Its Claude and
