@@ -14,7 +14,8 @@ export type ProviderName =
   | 'deepseek'
   | 'perplexity'
   | 'xai'
-  | 'kimi';
+  | 'kimi'
+  | 'foundry';
 
 export type Role = 'system' | 'user' | 'assistant' | 'tool' | 'developer';
 

@@ -28,7 +28,7 @@ const asBody = (b: object): Record<string, unknown> => b as Record<string, unkno
 // ---------------------------------------------------------------------------
 
 describe('openaiChatConfig — sampling-locked models', () => {
-  for (const model of ['gpt-5', 'GPT-5-turbo', 'o1', 'o3-mini', 'o4-pro']) {
+  for (const model of ['gpt-5', 'GPT-5-turbo', 'gpt-6-sol', 'o1', 'o3-mini', 'o4-pro']) {
     it(`drops temperature with warning on ${model}`, () => {
       const { body, warnings } = transformChatRequest(
         { ...base, model, temperature: 0.5 },
@@ -59,6 +59,59 @@ describe('openaiChatConfig — sampling-locked models', () => {
     assert.equal(body.temperature, 0.7);
     assert.equal(body.top_p, 0.95);
     assert.deepEqual(warnings, []);
+  });
+});
+
+describe('openaiChatConfig — reasoning-model rules (verified live on gpt-6)', () => {
+  const rejected = {
+    stop: ['END'],
+    frequency_penalty: 0.1,
+    presence_penalty: 0.2,
+    logit_bias: { '1': 1 },
+    logprobs: true,
+    top_logprobs: 2,
+  };
+  const weather = { type: 'function' as const, function: { name: 'get_weather' } };
+
+  for (const model of ['gpt-6-luna', 'o3-mini', 'gpt-5']) {
+    it(`drops stop/penalties/logit_bias/logprobs on ${model}, keeping seed`, () => {
+      const { body, warnings } = transformChatRequest(
+        { ...base, model, ...rejected, seed: 3 },
+        openaiChatConfig,
+        'openai',
+      );
+      for (const field of Object.keys(rejected)) {
+        assert.equal(body[field], undefined, `${field} should be dropped`);
+        assert.ok(warnings.some((w) => w.includes(`'${field}' unsupported on reasoning model ${model}`)));
+      }
+      assert.equal(body.seed, 3);
+    });
+  }
+
+  it("forces reasoning_effort 'none' on gpt-6 when function tools are present", () => {
+    const { body, warnings } = transformChatRequest(
+      { ...base, model: 'gpt-6-luna', tools: [weather], reasoning_effort: 'high' },
+      openaiChatConfig,
+      'openai',
+    );
+    assert.equal(body.reasoning_effort, 'none');
+    assert.ok(Array.isArray(body.tools));
+    assert.ok(warnings.some((w) => w.includes("reasoning_effort forced to 'none' for gpt-6-luna")));
+  });
+
+  it("maps 'minimal' to 'none' on gpt-6 and leaves other models alone", () => {
+    assert.equal(
+      transformChatRequest({ ...base, model: 'gpt-6-sol', reasoning_effort: 'minimal' }, openaiChatConfig, 'openai')
+        .body.reasoning_effort,
+      'none',
+    );
+    const other = transformChatRequest(
+      { ...base, model: 'gpt-5', tools: [weather], reasoning_effort: 'minimal' },
+      openaiChatConfig,
+      'openai',
+    );
+    assert.equal(other.body.reasoning_effort, 'minimal');
+    assert.deepEqual(other.warnings, []);
   });
 });
 
@@ -256,6 +309,20 @@ describe('sendChatRequest — error paths', () => {
       sendChatRequest({ apiKey: 'k', body: asBody(base) }),
       (err: unknown) =>
         err instanceof UpstreamError && err.statusCode === 429 && err.message === 'rate limited',
+    );
+  });
+
+  it('captures the retry-after back-off hint on UpstreamError', async () => {
+    installFetchMock(
+      async () =>
+        new Response(JSON.stringify({ error: { message: 'slow down' } }), {
+          status: 429,
+          headers: { 'Content-Type': 'application/json', 'retry-after': '3' },
+        }),
+    );
+    await assert.rejects(
+      sendChatRequest({ apiKey: 'k', body: asBody(base) }),
+      (err: unknown) => err instanceof UpstreamError && err.retryAfterMs === 3000,
     );
   });
 

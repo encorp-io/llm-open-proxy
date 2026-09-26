@@ -4,7 +4,8 @@
 
 OpenAI-canonical request/response translator for the major LLM providers.
 Write your code once in OpenAI Chat Completions shape and forward it to
-**Anthropic, Google Gemini, DeepSeek, Perplexity, xAI, or Moonshot Kimi** —
+**Anthropic, Google Gemini, DeepSeek, Perplexity, xAI, Moonshot Kimi, or
+Microsoft Foundry** (Azure OpenAI, Foundry Models, and Claude on Foundry) —
 with proper parameter mapping, message reshape, tool-call translation,
 and SSE streaming bridge.
 
@@ -48,14 +49,16 @@ console.log(response.choices[0].message.content);
 ```
 
 That's it. Same code structure works for OpenAI, Google, DeepSeek,
-Perplexity, xAI, and Kimi — just swap the function and the model id.
+Perplexity, xAI, Kimi, and Microsoft Foundry — just swap the function and
+the model id.
 
 ## Table of contents
 
 - [Why this package](#why-this-package)
 - [How it compares](#how-it-compares)
 - [Three layers of API](#three-layers-of-api)
-- [Streaming](#streaming-sse)
+- [Streaming](#layer-3--streaming)
+- [Microsoft Foundry](#microsoft-foundry)
 - [What gets translated](#what-gets-translated)
 - [Provider-specific escape hatch](#provider-specific-escape-hatch)
 - [Retry policy helper](#retry-policy-helper)
@@ -136,20 +139,120 @@ return new Response(stream, { headers: { 'Content-Type': 'text/event-stream' } }
 
 See [`examples/`](./examples) for runnable mini-projects covering each layer.
 
+## Microsoft Foundry
+
+[Microsoft Foundry](https://learn.microsoft.com/azure/foundry/) (formerly
+Azure AI Foundry) serves Azure OpenAI models, the non-OpenAI Foundry Models
+(DeepSeek, Grok, Llama, Mistral, MAI, …) and Claude from one resource,
+behind several wire protocols. `sendFoundryRequest` / `streamFoundryRequest`
+take a canonical request and handle routing, auth, translation and the
+Azure-specific response quirks. `model` is always the **deployment name**.
+
+```ts
+import { sendFoundryRequest, streamFoundryRequest } from '@encorp.ai/llm-open-proxy';
+
+// Azure OpenAI or any Foundry Model, via the v1 API (the default)
+const { response, usage, warnings } = await sendFoundryRequest({
+  endpoint: 'https://my-resource.services.ai.azure.com',
+  apiKey: process.env.FOUNDRY_API_KEY!,
+  body: { model: 'gpt-6-luna', messages: [{ role: 'user', content: 'Hello' }] },
+});
+
+// Claude on Foundry — same call, Anthropic translation underneath
+await sendFoundryRequest({
+  endpoint: 'https://my-resource.services.ai.azure.com',
+  api: 'anthropic',
+  apiKey: process.env.FOUNDRY_API_KEY!,
+  body: { model: 'claude-sonnet-5', messages: [{ role: 'user', content: 'Hello' }] },
+});
+```
+
+| `api`                        | Endpoint                                                          | Notes                                                              |
+|------------------------------|-------------------------------------------------------------------|--------------------------------------------------------------------|
+| `openai-v1` *(default)*      | `{endpoint}/openai/v1/chat/completions`                           | Recommended. Azure OpenAI + Foundry Models. No `api-version`.      |
+| `openai-deployments`         | `{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=…` | Dated API. Defaults to GA `2024-10-21`.                            |
+| `model-inference`            | `{endpoint}/models/chat/completions?api-version=…`                | Deprecated Azure AI Model Inference API. Legacy only.              |
+| `anthropic`                  | `{endpoint}/anthropic/v1/messages`                                | Claude. Full Anthropic ↔ OpenAI translation, incl. streaming.     |
+
+`endpoint` can be a resource (`https://x.services.ai.azure.com`,
+`https://x.openai.azure.com`) or a project endpoint
+(`…/api/projects/my-project`). Project endpoints only serve `openai-v1`, so
+for the other APIs the project path is dropped and the resource endpoint
+used automatically. For anything else — APIM fronts, legacy serverless or
+managed-compute endpoints — pass a full `url` instead.
+
+**Auth.** Pass `apiKey` (sent as `api-key`; `x-api-key` for Claude) or a
+Microsoft Entra ID token provider. The library has no dependency on
+`@azure/identity`; plug it in yourself:
+
+```ts
+import { DefaultAzureCredential, getBearerTokenProvider } from '@azure/identity';
+import { FOUNDRY_ENTRA_SCOPE } from '@encorp.ai/llm-open-proxy';
+
+await sendFoundryRequest({
+  endpoint,
+  getToken: getBearerTokenProvider(new DefaultAzureCredential(), FOUNDRY_ENTRA_SCOPE),
+  body,
+});
+```
+
+`FOUNDRY_ENTRA_SCOPE` (`https://ai.azure.com/.default`) is what the Foundry
+docs specify; the dated and Model Inference APIs historically use
+`AZURE_COGNITIVE_SERVICES_SCOPE`.
+
+**What the adapter normalizes for you:**
+
+- **Reasoning models.** Azure OpenAI reasoning deployments (o-series,
+  gpt-5, gpt-6 — detected by deployment name) get `temperature`, `top_p`,
+  penalties, `logit_bias`, logprobs and `stop` dropped with warnings. GPT-6
+  only accepts function tools on Chat Completions with
+  `reasoning_effort: 'none'`, so requests with tools get it forced (with a
+  warning), and its missing `minimal` level maps to `none`. Reasoning comes
+  back as `reasoning_content` when the model sends it natively (DeepSeek
+  V4.x, once `reasoning_effort` is set); models that inline a leading
+  `<think>…</think>` block (DeepSeek-R1 & co.) have it moved there too, in
+  both non-streaming and streaming responses (disable with
+  `extractThinkTags: false`).
+- **Streaming.** Azure's first chunk is a choice-less prompt annotation with
+  a blank id; it is dropped (its verdicts stay available via
+  `getPromptFilterResults()`). Async-filter annotation chunks get their
+  blank `id` / `model` / `created` backfilled and an empty `delta`, so
+  OpenAI clients that read `choices[0].delta` don't break. Stream usage is
+  always requested — OpenAI models only report it when asked.
+- **Content safety.** `prompt_filter_results` and per-choice
+  `content_filter_results` pass through on `FoundryChatResponse` (typed). A
+  400 content-filter rejection surfaces as `UpstreamError`;
+  `getFoundryContentFilterError(err)` returns its message and category
+  verdicts, reading both of Azure's error spellings.
+- **Errors.** Every Azure error envelope yields a readable message, and the
+  `retry-after-ms` / `retry-after` back-off hint lands on
+  `UpstreamError.retryAfterMs` (on every transport, not just Foundry).
+- **Model Inference API.** `max_completion_tokens` → `max_tokens` (kept
+  as `max_completion_tokens` for OpenAI reasoning deployments, which reject
+  `max_tokens`), `stop` wrapped as an array, out-of-schema fields dropped.
+  Set `extraParameters: 'pass-through'` to forward model-specific fields
+  from `provider_options.foundry`.
+
+Layer 1 works too: `convertChatRequest(canonical, 'foundry')` targets the
+OpenAI-compatible surfaces, and `convertFoundryRequest(canonical, { api })`
+targets any of them. `buildFoundryUrl` builds the matching URL.
+
 ## What gets translated
 
-| Canonical field        | OpenAI                        | Anthropic                                                  | Google | DeepSeek                          | Perplexity        |
-|------------------------|-------------------------------|------------------------------------------------------------|--------|-----------------------------------|-------------------|
-| `temperature`          | ✓ (locked on o-series/GPT-5)  | clamped to ≤ 1.0                                           | ✓      | ✓                                 | ✓                 |
-| `top_p` / `top_k`      | top_p only                    | both                                                       | both   | top_p only                        | top_p only        |
-| `max_completion_tokens`| ✓                             | renamed to `max_tokens` (required, defaulted to 4096)      | ✓      | renamed to `max_tokens`           | renamed           |
-| `stop`                 | ✓                             | renamed to `stop_sequences`                                | ✓      | ✓                                 | ✓                 |
-| `tools`, `tool_choice` | ✓                             | reshaped to `input_schema` + `{type, name}`                | ✓      | ✓                                 | tool_choice dropped |
-| `response_format`      | ✓                             | translated to `output_config`                              | ✓      | ✓                                 | ✓                 |
-| `reasoning_effort`     | ✓                             | mapped to `thinking.budget_tokens`                         | ✓      | mapped to `thinking.reasoning_effort` | ✓             |
-| Message reshape        | —                             | system extraction, tool_use/tool_result blocks, image blocks | —    | preserves `reasoning_content`     | —                 |
-| Response → canonical   | —                             | `tool_use` → `tool_calls`, stop_reason mapping             | —      | —                                 | —                 |
-| Streaming SSE bridge   | passthrough                   | full Anthropic→OpenAI event translation                    | passthrough | passthrough                  | passthrough       |
+| Canonical field        | OpenAI                        | Anthropic                                                  | Google | DeepSeek                          | Perplexity        | Foundry (OpenAI APIs)¹                         |
+|------------------------|-------------------------------|------------------------------------------------------------|--------|-----------------------------------|-------------------|------------------------------------------------|
+| `temperature`          | ✓ (locked on o-series/GPT-5/6)| clamped to ≤ 1.0                                           | ✓      | ✓                                 | ✓                 | ✓ (dropped on reasoning deployments)           |
+| `top_p` / `top_k`      | top_p only                    | both                                                       | both   | top_p only                        | top_p only        | top_p only                                     |
+| `max_completion_tokens`| ✓                             | renamed to `max_tokens` (required, defaulted to 4096)      | ✓      | renamed to `max_tokens`           | renamed           | ✓ (`max_tokens` on Model Inference)            |
+| `stop`                 | ✓ (dropped on reasoning models)| renamed to `stop_sequences`                                | ✓      | ✓                                 | ✓                 | ✓ (dropped on reasoning deployments)           |
+| `tools`, `tool_choice` | ✓                             | reshaped to `input_schema` + `{type, name}`                | ✓      | ✓                                 | tool_choice dropped | ✓                                            |
+| `response_format`      | ✓                             | translated to `output_config`                              | ✓      | ✓                                 | ✓                 | ✓                                              |
+| `reasoning_effort`     | ✓ (`none` with tools on GPT-6)| mapped to `thinking.budget_tokens`                         | ✓      | mapped to `thinking.reasoning_effort` | ✓             | ✓ (`none` with tools on GPT-6)                 |
+| Message reshape        | —                             | system extraction, tool_use/tool_result blocks, image blocks | —    | preserves `reasoning_content`     | —                 | —                                              |
+| Response → canonical   | —                             | `tool_use` → `tool_calls`, stop_reason mapping             | —      | —                                 | —                 | leading `<think>` → `reasoning_content`        |
+| Streaming SSE bridge   | passthrough                   | full Anthropic→OpenAI event translation                    | passthrough | passthrough                  | passthrough       | Azure filter-chunk normalization               |
+
+¹ Claude on Foundry (`api: 'anthropic'`) uses the Anthropic column.
 
 Every dropped / clamped / renamed field is reported in the `warnings`
 array, so you can surface them to operators in logs. Nothing fails
@@ -207,7 +310,7 @@ import { anthropicChatConfig } from '@encorp.ai/llm-open-proxy/providers/anthrop
 The suite uses Node's built-in test runner — no test-framework dependency.
 
 ```bash
-npm test               # build + run (199 tests, ~0.5s)
+npm test               # build + run (299 tests, ~0.5s)
 npm run test:coverage  # build + run with 100% line/branch/function coverage
 ```
 
@@ -223,7 +326,7 @@ run hermetically.
 | 1 | [`01-basic-anthropic`](./examples/01-basic-anthropic) | One-shot Anthropic call with response translation |
 | 2 | [`02-streaming`](./examples/02-streaming) | OpenAI-format SSE produced from an Anthropic upstream |
 | 3 | [`03-multi-provider`](./examples/03-multi-provider) | Multi-provider router with retry-on-5xx fallback |
-| 4 | [`04-express-proxy`](./examples/04-express-proxy) | Drop-in Express HTTP gateway |
+| 4 | [`04-express-proxy`](./examples/04-express-proxy) | Drop-in Express HTTP gateway (incl. Microsoft Foundry routing) |
 
 ## Generating the docs locally
 

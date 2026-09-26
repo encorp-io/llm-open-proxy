@@ -15,14 +15,76 @@ import type {
   CanonicalChatResponse,
   TokenUsage,
 } from '../types.js';
-import type { ProviderParamConfig } from '../engine.js';
+import type { MapAction, ProviderParamConfig } from '../engine.js';
 import { resolveMaxCompletionTokens, modelMatches } from '../helpers.js';
 import { UpstreamError } from '../errors.js';
+import { parseRetryAfterMs } from '../retry.js';
 
 export const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
 
-/** Models that reject `temperature` and `top_p` (only the model default is accepted). */
-const SAMPLING_LOCKED_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4'] as const;
+/**
+ * Reasoning-model families that reject `temperature` and `top_p` (only the
+ * model default is accepted). Also used by the Microsoft Foundry adapter,
+ * which serves the same Azure OpenAI models.
+ */
+export const SAMPLING_LOCKED_PREFIXES = ['gpt-5', 'gpt-6', 'o1', 'o3', 'o4'] as const;
+
+// The rules below are shared with the Microsoft Foundry adapter, which serves
+// the same OpenAI models. Model detection is by id prefix — best-effort on
+// Foundry, where `model` is a deployment name.
+
+export function isReasoningModel(model: string): boolean {
+  return modelMatches(model, SAMPLING_LOCKED_PREFIXES);
+}
+
+/**
+ * Drop `field` (with a warning) on reasoning models. Beyond temperature and
+ * top_p they also reject penalties, logprobs, `logit_bias` and `stop` —
+ * verified live for gpt-6 on OpenAI and Foundry.
+ */
+export function droppedOnReasoningModels(
+  field: keyof CanonicalChatRequest,
+  transform: (value: unknown) => unknown = (value) => value,
+): MapAction {
+  return {
+    kind: 'custom',
+    apply(body, value, ctx) {
+      if (isReasoningModel(ctx.fullRequest.model)) {
+        ctx.warn(`'${field}' unsupported on reasoning model ${ctx.fullRequest.model} -- dropped`);
+        return;
+      }
+      body[field] = transform(value);
+    },
+  };
+}
+
+/**
+ * GPT-6 on Chat Completions only accepts function tools alongside
+ * `reasoning_effort: 'none'` — omitting it still fails, since the model
+ * reasons by default — and it has no `minimal` level (its lowest is `none`).
+ * Verified live on OpenAI and Foundry for gpt-6-luna and gpt-6-sol.
+ */
+const TOOLS_NEED_NO_REASONING_PREFIXES = ['gpt-6'] as const;
+
+export const toolAwareReasoningEffort: MapAction = {
+  kind: 'always',
+  apply(body, value, ctx) {
+    const { model, tools } = ctx.fullRequest;
+    if (modelMatches(model, TOOLS_NEED_NO_REASONING_PREFIXES)) {
+      if (tools && tools.length > 0) {
+        ctx.warn(`reasoning_effort forced to 'none' for ${model} -- function tools on chat completions require it`);
+        body.reasoning_effort = 'none';
+        return;
+      }
+      if (value === 'minimal') {
+        ctx.warn(`reasoning_effort 'minimal' unsupported on ${model} -- sent as 'none'`);
+        body.reasoning_effort = 'none';
+        return;
+      }
+    }
+    if (value !== undefined) body.reasoning_effort = value;
+  },
+};
 
 export const openaiChatConfig: ProviderParamConfig = {
   temperature: {
@@ -55,19 +117,19 @@ export const openaiChatConfig: ProviderParamConfig = {
       if (resolved !== undefined) body.max_completion_tokens = resolved;
     },
   },
-  stop: { kind: 'passthrough' },
-  frequency_penalty: { kind: 'passthrough' },
-  presence_penalty: { kind: 'passthrough' },
-  logit_bias: { kind: 'passthrough' },
+  stop: droppedOnReasoningModels('stop'),
+  frequency_penalty: droppedOnReasoningModels('frequency_penalty'),
+  presence_penalty: droppedOnReasoningModels('presence_penalty'),
+  logit_bias: droppedOnReasoningModels('logit_bias'),
   seed: { kind: 'passthrough' },
   user: { kind: 'passthrough' },
-  logprobs: { kind: 'passthrough' },
-  top_logprobs: { kind: 'passthrough' },
+  logprobs: droppedOnReasoningModels('logprobs'),
+  top_logprobs: droppedOnReasoningModels('top_logprobs'),
   response_format: { kind: 'passthrough' },
   tools: { kind: 'passthrough' },
   tool_choice: { kind: 'passthrough' },
   parallel_tool_calls: { kind: 'passthrough' },
-  reasoning_effort: { kind: 'passthrough' },
+  reasoning_effort: toolAwareReasoningEffort,
   stream: { kind: 'passthrough' },
   stream_options: { kind: 'passthrough' },
 };
@@ -189,7 +251,7 @@ async function openaiFetch(
     const errorBody = await res.json().catch(() => ({} as unknown));
     const message =
       (errorBody as { error?: { message?: string } })?.error?.message ?? `Upstream error ${res.status}`;
-    throw new UpstreamError(message, res.status, errorBody);
+    throw new UpstreamError(message, res.status, errorBody, parseRetryAfterMs(res.headers));
   }
 
   return res;

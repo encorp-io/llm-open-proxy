@@ -36,6 +36,13 @@ export async function call<T>(fn: () => Promise<T>): Promise<T> {
 }
 
 /**
+ * Default OpenAI model for the integration suite — also the default
+ * Microsoft Foundry deployment name. One place to bump when a model is
+ * deprecated; override per run with OPENAI_MODEL / FOUNDRY_MODEL.
+ */
+export const DEFAULT_OPENAI_MODEL = 'gpt-6-luna';
+
+/**
  * Build the smallest meaningful chat request: one system message, one
  * user message, capped at ~10 output tokens.
  */

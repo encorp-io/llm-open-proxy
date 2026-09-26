@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { UpstreamError } from '../src/errors.js';
+import { UpstreamError, upstreamErrorMessage } from '../src/errors.js';
 
 describe('UpstreamError', () => {
   it('captures message, statusCode and upstream body', () => {
@@ -17,6 +17,12 @@ describe('UpstreamError', () => {
   it('defaults upstreamBody to an empty object when omitted', () => {
     const err = new UpstreamError('boom', 500);
     assert.deepEqual(err.upstreamBody, {});
+    assert.equal(err.retryAfterMs, undefined);
+  });
+
+  it('carries an optional retryAfterMs back-off hint', () => {
+    const err = new UpstreamError('slow down', 429, {}, 1500);
+    assert.equal(err.retryAfterMs, 1500);
   });
 
   it('toString() renders the upstream body inline for diagnostics', () => {
@@ -62,5 +68,22 @@ describe('UpstreamError', () => {
       assert.match(inspected, /upstreamBody:/);
       assert.match(inspected, /no access/);
     });
+  });
+});
+
+describe('upstreamErrorMessage', () => {
+  it('reads the {error: {message}} envelope first', () => {
+    assert.equal(upstreamErrorMessage({ error: { message: 'inner' }, message: 'outer' }), 'inner');
+  });
+
+  it('falls back to a top-level message (Azure gateway envelopes)', () => {
+    assert.equal(upstreamErrorMessage({ statusCode: 401, message: 'Unauthorized' }), 'Unauthorized');
+    assert.equal(upstreamErrorMessage({ error: 'not-an-object', message: 'flat' }), 'flat');
+  });
+
+  it('returns undefined when no string message is present', () => {
+    for (const body of [null, undefined, 'text', 42, {}, { error: { message: 7 } }, { message: ['x'] }]) {
+      assert.equal(upstreamErrorMessage(body), undefined, JSON.stringify(body));
+    }
   });
 });

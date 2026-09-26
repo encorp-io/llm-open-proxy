@@ -3,9 +3,13 @@
 A complete `/v1/chat/completions` HTTP endpoint that:
 
 - accepts OpenAI-format requests (so any OpenAI client SDK works)
-- routes to the correct provider based on the `model` field's prefix
+- routes to the correct provider based on the `model` field's prefix —
+  including Microsoft Foundry deployments addressed as
+  `foundry/<deployment-name>` (e.g. `foundry/gpt-6-luna`,
+  `foundry/DeepSeek-R1`, `foundry/claude-sonnet-5`)
 - supports both streaming (`stream: true`) and non-streaming responses
-- maps `UpstreamError` to the correct HTTP status
+- maps `UpstreamError` to the correct HTTP status, forwarding the
+  upstream's `Retry-After` hint on rate limits
 
 This is the smallest example of *what the npm package is for*: providing
 the building blocks to build your own multi-provider gateway in 80 lines

@@ -1,7 +1,7 @@
 {
   "name": "@encorp.ai/llm-open-proxy",
   "version": "0.2.2",
-  "description": "OpenAI-canonical chat-completion request/response translator for Anthropic, Google, DeepSeek, Perplexity, xAI, Kimi. Zero runtime dependencies.",
+  "description": "OpenAI-canonical chat-completion request/response translator for Anthropic, Google, DeepSeek, Perplexity, xAI, Kimi, and Microsoft Foundry (Azure OpenAI). Zero runtime dependencies.",
   "keywords": [
     "openai",
     "anthropic",
@@ -11,6 +11,10 @@
     "perplexity",
     "xai",
     "kimi",
+    "azure",
+    "azure-openai",
+    "microsoft-foundry",
+    "foundry",
     "llm",
     "proxy",
     "gateway",
@@ -57,6 +61,10 @@
     "./providers/perplexity": {
       "types": "./dist/providers/perplexity.d.ts",
       "import": "./dist/providers/perplexity.js"
+    },
+    "./providers/foundry": {
+      "types": "./dist/providers/foundry.d.ts",
+      "import": "./dist/providers/foundry.js"
     },
     "./package.json": "./package.json"
   },

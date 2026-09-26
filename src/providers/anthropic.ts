@@ -25,11 +25,14 @@ import {
   clampTemperature,
   stripReasoningContent,
 } from '../helpers.js';
-import { UpstreamError } from '../errors.js';
+import { UpstreamError, upstreamErrorMessage } from '../errors.js';
+import { parseRetryAfterMs } from '../retry.js';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
 const DEFAULT_TIMEOUT_MS = 600_000;
+/** Header names that carry a credential; any of these in `opts.headers` replaces the default x-api-key. */
+const AUTH_HEADER_NAMES = new Set(['authorization', 'api-key', 'x-api-key']);
 
 // ---------------------------------------------------------------------------
 // Provider config — declarative scalar-field mapping
@@ -351,6 +354,14 @@ export interface AnthropicSendOptions {
   apiVersion?: string;
   signal?: AbortSignal;
   timeoutMs?: number;
+  /**
+   * Extra headers merged over the defaults (e.g. `anthropic-beta`). If this
+   * carries its own credential (`Authorization`, `api-key` or `x-api-key`,
+   * any casing), the default `x-api-key: <apiKey>` header is omitted — this
+   * is how Anthropic-compatible hosts that use bearer auth (e.g. Microsoft
+   * Foundry with Entra ID) are reached.
+   */
+  headers?: Record<string, string>;
 }
 
 export interface AnthropicSendResult {
@@ -557,14 +568,20 @@ async function anthropicFetch(
   const timeoutSignal = AbortSignal.timeout(timeoutMs);
   const signal = opts.signal ? AbortSignal.any([opts.signal, timeoutSignal]) : timeoutSignal;
 
+  const extraHeaders = opts.headers ?? {};
+  const hasOwnCredential = Object.keys(extraHeaders).some((h) =>
+    AUTH_HEADER_NAMES.has(h.toLowerCase()),
+  );
+
   let res: Response;
   try {
     res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': opts.apiKey,
+        ...(hasOwnCredential ? {} : { 'x-api-key': opts.apiKey }),
         'anthropic-version': opts.apiVersion ?? ANTHROPIC_VERSION,
+        ...extraHeaders,
       },
       body: JSON.stringify(body),
       signal,
@@ -578,10 +595,8 @@ async function anthropicFetch(
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({} as unknown));
-    const message =
-      (errorBody as { error?: { message?: string } })?.error?.message ??
-      `Anthropic API error ${res.status}`;
-    throw new UpstreamError(message, res.status, errorBody);
+    const message = upstreamErrorMessage(errorBody) ?? `Anthropic API error ${res.status}`;
+    throw new UpstreamError(message, res.status, errorBody, parseRetryAfterMs(res.headers));
   }
 
   return res;

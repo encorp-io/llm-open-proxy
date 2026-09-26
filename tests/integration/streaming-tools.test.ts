@@ -38,6 +38,7 @@ import {
   collectSseToolCalls,
   skipIfMissingKey,
   call,
+  DEFAULT_OPENAI_MODEL,
 } from './helpers.js';
 
 const WEATHER_USER_MSG = {
@@ -89,7 +90,7 @@ test('anthropic — streaming tool call assembles correctly from input_json_delt
 test('openai — streaming tool call assembles correctly across SSE chunks', skipIfMissingKey('OPENAI_API_KEY'), async () => {
   const { body } = convertChatRequest(
     {
-      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+      model: process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL,
       messages: [WEATHER_USER_MSG],
       tools: [WEATHER_TOOL],
       tool_choice: 'auto',

@@ -4,6 +4,7 @@ import {
   convertChatRequest,
   transformChatRequest,
   isRetryableUpstreamStatus,
+  parseRetryAfterMs,
   UpstreamError,
   resolveMaxCompletionTokens,
   stripReasoningContent,
@@ -18,6 +19,17 @@ import {
   anthropicChatConfig,
   deepseekChatConfig,
   perplexityChatConfig,
+  foundryChatConfig,
+  foundryModelInferenceChatConfig,
+  sendFoundryRequest,
+  streamFoundryRequest,
+  convertFoundryRequest,
+  buildFoundryUrl,
+  getFoundryContentFilterError,
+  FOUNDRY_DEPLOYMENTS_API_VERSION,
+  FOUNDRY_MODEL_INFERENCE_API_VERSION,
+  FOUNDRY_ENTRA_SCOPE,
+  AZURE_COGNITIVE_SERVICES_SCOPE,
   sendChatRequest,
   streamChatRequest,
   sendAnthropicRequest,
@@ -79,6 +91,21 @@ describe('convertChatRequest', () => {
     assert.equal((body as { user_id: string }).user_id, 'u-1');
   });
 
+  it('routes foundry through foundryChatConfig (strips reasoning_content, upgrades max_tokens)', () => {
+    const { body, warnings } = convertChatRequest(
+      {
+        ...base,
+        max_tokens: 10,
+        messages: [...base.messages, { role: 'assistant', content: 'a', reasoning_content: 'r' }],
+      },
+      'foundry',
+    );
+    assert.equal((body as { max_completion_tokens: number }).max_completion_tokens, 10);
+    const msgs = (body as { messages: Array<{ reasoning_content?: string }> }).messages;
+    assert.equal(msgs[2].reasoning_content, undefined);
+    assert.deepEqual(warnings, []);
+  });
+
   it('routes perplexity through perplexityChatConfig (drops tool_choice)', () => {
     const { body, warnings } = convertChatRequest(
       { ...base, tool_choice: 'auto' },
@@ -98,6 +125,7 @@ describe('public surface re-exports', () => {
     assert.equal(typeof clampTemperature, 'function');
     assert.equal(typeof modelMatches, 'function');
     assert.equal(typeof isRetryableUpstreamStatus, 'function');
+    assert.equal(typeof parseRetryAfterMs, 'function');
     assert.ok(UpstreamError.prototype instanceof Error);
     assert.equal(ANTHROPIC_DEFAULT_MAX_TOKENS, 4096);
     assert.equal(typeof ANTHROPIC_THINKING_BUDGET.medium, 'number');
@@ -110,6 +138,28 @@ describe('public surface re-exports', () => {
     assert.ok(anthropicChatConfig);
     assert.ok(deepseekChatConfig);
     assert.ok(perplexityChatConfig);
+    assert.ok(foundryChatConfig);
+    assert.ok(foundryModelInferenceChatConfig);
+  });
+
+  it('exposes the Microsoft Foundry transport, helpers and constants', () => {
+    for (const fn of [
+      sendFoundryRequest,
+      streamFoundryRequest,
+      convertFoundryRequest,
+      buildFoundryUrl,
+      getFoundryContentFilterError,
+    ]) {
+      assert.equal(typeof fn, 'function');
+    }
+    for (const c of [
+      FOUNDRY_DEPLOYMENTS_API_VERSION,
+      FOUNDRY_MODEL_INFERENCE_API_VERSION,
+      FOUNDRY_ENTRA_SCOPE,
+      AZURE_COGNITIVE_SERVICES_SCOPE,
+    ]) {
+      assert.equal(typeof c, 'string');
+    }
   });
 
   it('exposes the transport functions and translator helpers', () => {
