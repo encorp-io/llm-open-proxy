@@ -62,6 +62,59 @@ describe('openaiChatConfig — sampling-locked models', () => {
   });
 });
 
+describe('openaiChatConfig — reasoning-model rules (verified live on gpt-6)', () => {
+  const rejected = {
+    stop: ['END'],
+    frequency_penalty: 0.1,
+    presence_penalty: 0.2,
+    logit_bias: { '1': 1 },
+    logprobs: true,
+    top_logprobs: 2,
+  };
+  const weather = { type: 'function' as const, function: { name: 'get_weather' } };
+
+  for (const model of ['gpt-6-luna', 'o3-mini', 'gpt-5']) {
+    it(`drops stop/penalties/logit_bias/logprobs on ${model}, keeping seed`, () => {
+      const { body, warnings } = transformChatRequest(
+        { ...base, model, ...rejected, seed: 3 },
+        openaiChatConfig,
+        'openai',
+      );
+      for (const field of Object.keys(rejected)) {
+        assert.equal(body[field], undefined, `${field} should be dropped`);
+        assert.ok(warnings.some((w) => w.includes(`'${field}' unsupported on reasoning model ${model}`)));
+      }
+      assert.equal(body.seed, 3);
+    });
+  }
+
+  it("forces reasoning_effort 'none' on gpt-6 when function tools are present", () => {
+    const { body, warnings } = transformChatRequest(
+      { ...base, model: 'gpt-6-luna', tools: [weather], reasoning_effort: 'high' },
+      openaiChatConfig,
+      'openai',
+    );
+    assert.equal(body.reasoning_effort, 'none');
+    assert.ok(Array.isArray(body.tools));
+    assert.ok(warnings.some((w) => w.includes("reasoning_effort forced to 'none' for gpt-6-luna")));
+  });
+
+  it("maps 'minimal' to 'none' on gpt-6 and leaves other models alone", () => {
+    assert.equal(
+      transformChatRequest({ ...base, model: 'gpt-6-sol', reasoning_effort: 'minimal' }, openaiChatConfig, 'openai')
+        .body.reasoning_effort,
+      'none',
+    );
+    const other = transformChatRequest(
+      { ...base, model: 'gpt-5', tools: [weather], reasoning_effort: 'minimal' },
+      openaiChatConfig,
+      'openai',
+    );
+    assert.equal(other.body.reasoning_effort, 'minimal');
+    assert.deepEqual(other.warnings, []);
+  });
+});
+
 describe('openaiChatConfig — passthroughs and resolution', () => {
   it('passes through max_completion_tokens directly', () => {
     const { body } = transformChatRequest(

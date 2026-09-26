@@ -39,10 +39,10 @@ import type {
 } from '../types.js';
 import type { MapAction, ProviderParamConfig, TransformResult } from '../engine.js';
 import { transformChatRequest } from '../engine.js';
-import { modelMatches, resolveMaxCompletionTokens, stripReasoningContent } from '../helpers.js';
+import { resolveMaxCompletionTokens, stripReasoningContent } from '../helpers.js';
 import { UpstreamError, upstreamErrorMessage } from '../errors.js';
 import { parseRetryAfterMs } from '../retry.js';
-import { SAMPLING_LOCKED_PREFIXES } from './openai.js';
+import { droppedOnReasoningModels, isReasoningModel, toolAwareReasoningEffort } from './openai.js';
 import { toAnthropicRequest, sendAnthropicRequest, streamAnthropicRequest } from './anthropic.js';
 
 /** Default `api-version` for `api: 'openai-deployments'` (latest GA). */
@@ -60,59 +60,9 @@ const DEFAULT_TIMEOUT_MS = 600_000;
 // Provider configs — declarative scalar-field mapping
 // ---------------------------------------------------------------------------
 
-/**
- * Azure OpenAI reasoning models (o-series, gpt-5, gpt-6) reject sampling,
- * penalty, logprob and `stop` controls. Foundry `model` is a deployment name,
- * so detection is best-effort: it works when deployments are named after
- * their model.
- */
-function isReasoningModel(model: string): boolean {
-  return modelMatches(model, SAMPLING_LOCKED_PREFIXES);
-}
-
-function droppedOnReasoningModels(
-  field: keyof CanonicalChatRequest,
-  transform: (value: unknown) => unknown = (value) => value,
-): MapAction {
-  return {
-    kind: 'custom',
-    apply(body, value, ctx) {
-      if (isReasoningModel(ctx.fullRequest.model)) {
-        ctx.warn(`'${field}' unsupported on reasoning model ${ctx.fullRequest.model} -- dropped`);
-        return;
-      }
-      body[field] = transform(value);
-    },
-  };
-}
-
-/**
- * GPT-6 on Chat Completions only accepts function tools alongside
- * `reasoning_effort: 'none'` — omitting it still fails, since the model
- * reasons by default — and it has no `minimal` level (its lowest is `none`).
- * Verified against Foundry for gpt-6-luna and gpt-6-sol.
- */
-const TOOLS_NEED_NO_REASONING_PREFIXES = ['gpt-6'] as const;
-
-const foundryReasoningEffort: MapAction = {
-  kind: 'always',
-  apply(body, value, ctx) {
-    const { model, tools } = ctx.fullRequest;
-    if (modelMatches(model, TOOLS_NEED_NO_REASONING_PREFIXES)) {
-      if (tools && tools.length > 0) {
-        ctx.warn(`reasoning_effort forced to 'none' for ${model} -- function tools on chat completions require it`);
-        body.reasoning_effort = 'none';
-        return;
-      }
-      if (value === 'minimal') {
-        ctx.warn(`reasoning_effort 'minimal' unsupported on ${model} -- sent as 'none'`);
-        body.reasoning_effort = 'none';
-        return;
-      }
-    }
-    if (value !== undefined) body.reasoning_effort = value;
-  },
-};
+// Reasoning-model rules (sampling/penalty/logprob/stop drops, GPT-6's
+// tools ⇒ reasoning_effort 'none') are shared with the OpenAI config: the
+// same models, the same live-verified behaviour.
 
 /**
  * The Model Inference API expects `max_tokens`, but it forwards OpenAI
@@ -154,7 +104,7 @@ export const foundryChatConfig: ProviderParamConfig = {
   tools: { kind: 'passthrough' },
   tool_choice: { kind: 'passthrough' },
   parallel_tool_calls: { kind: 'passthrough' },
-  reasoning_effort: foundryReasoningEffort,
+  reasoning_effort: toolAwareReasoningEffort,
   stream: { kind: 'passthrough' },
   stream_options: { kind: 'passthrough' },
 };
@@ -185,7 +135,7 @@ export const foundryModelInferenceChatConfig: ProviderParamConfig = {
   tools: { kind: 'passthrough' },
   tool_choice: { kind: 'passthrough' },
   parallel_tool_calls: { kind: 'drop', reason: 'not in the Model Inference schema' },
-  reasoning_effort: foundryReasoningEffort,
+  reasoning_effort: toolAwareReasoningEffort,
   stream: { kind: 'passthrough' },
   stream_options: { kind: 'passthrough' },
 };

@@ -155,7 +155,7 @@ import { sendFoundryRequest, streamFoundryRequest } from '@encorp.ai/llm-open-pr
 const { response, usage, warnings } = await sendFoundryRequest({
   endpoint: 'https://my-resource.services.ai.azure.com',
   apiKey: process.env.FOUNDRY_API_KEY!,
-  body: { model: 'gpt-4o-mini', messages: [{ role: 'user', content: 'Hello' }] },
+  body: { model: 'gpt-6-luna', messages: [{ role: 'user', content: 'Hello' }] },
 });
 
 // Claude on Foundry — same call, Anthropic translation underneath
@@ -244,10 +244,10 @@ targets any of them. `buildFoundryUrl` builds the matching URL.
 | `temperature`          | ✓ (locked on o-series/GPT-5/6)| clamped to ≤ 1.0                                           | ✓      | ✓                                 | ✓                 | ✓ (dropped on reasoning deployments)           |
 | `top_p` / `top_k`      | top_p only                    | both                                                       | both   | top_p only                        | top_p only        | top_p only                                     |
 | `max_completion_tokens`| ✓                             | renamed to `max_tokens` (required, defaulted to 4096)      | ✓      | renamed to `max_tokens`           | renamed           | ✓ (`max_tokens` on Model Inference)            |
-| `stop`                 | ✓                             | renamed to `stop_sequences`                                | ✓      | ✓                                 | ✓                 | ✓                                              |
+| `stop`                 | ✓ (dropped on reasoning models)| renamed to `stop_sequences`                                | ✓      | ✓                                 | ✓                 | ✓ (dropped on reasoning deployments)           |
 | `tools`, `tool_choice` | ✓                             | reshaped to `input_schema` + `{type, name}`                | ✓      | ✓                                 | tool_choice dropped | ✓                                            |
 | `response_format`      | ✓                             | translated to `output_config`                              | ✓      | ✓                                 | ✓                 | ✓                                              |
-| `reasoning_effort`     | ✓                             | mapped to `thinking.budget_tokens`                         | ✓      | mapped to `thinking.reasoning_effort` | ✓             | ✓ (`none` with tools on GPT-6)                 |
+| `reasoning_effort`     | ✓ (`none` with tools on GPT-6)| mapped to `thinking.budget_tokens`                         | ✓      | mapped to `thinking.reasoning_effort` | ✓             | ✓ (`none` with tools on GPT-6)                 |
 | Message reshape        | —                             | system extraction, tool_use/tool_result blocks, image blocks | —    | preserves `reasoning_content`     | —                 | —                                              |
 | Response → canonical   | —                             | `tool_use` → `tool_calls`, stop_reason mapping             | —      | —                                 | —                 | leading `<think>` → `reasoning_content`        |
 | Streaming SSE bridge   | passthrough                   | full Anthropic→OpenAI event translation                    | passthrough | passthrough                  | passthrough       | Azure filter-chunk normalization               |

@@ -346,6 +346,7 @@ components:
               items: { type: string }
           x-provider-support:
             anthropic: renamed to `stop_sequences`
+            openai: dropped on reasoning models
             foundry: dropped on reasoning deployments; wrapped as an array on the Model Inference API
         frequency_penalty:
           type: number
@@ -353,6 +354,7 @@ components:
             anthropic: dropped
             deepseek: dropped (deprecated v4)
             perplexity: dropped
+            openai: dropped on reasoning models
             foundry: dropped on reasoning deployments
         presence_penalty:
           type: number
@@ -360,6 +362,7 @@ components:
             anthropic: dropped
             deepseek: dropped (deprecated v4)
             perplexity: dropped
+            openai: dropped on reasoning models
             foundry: dropped on reasoning deployments
         logit_bias:
           type: object
@@ -369,6 +372,7 @@ components:
             google: dropped
             deepseek: dropped
             perplexity: dropped
+            openai: dropped on reasoning models
             foundry: dropped on reasoning deployments and the Model Inference API
         seed:
           type: integer
@@ -385,10 +389,12 @@ components:
         logprobs:
           type: boolean
           x-provider-support:
+            openai: dropped on reasoning models
             foundry: dropped on reasoning deployments and the Model Inference API
         top_logprobs:
           type: integer
           x-provider-support:
+            openai: dropped on reasoning models
             foundry: dropped on reasoning deployments and the Model Inference API
         response_format:
           $ref: '#/components/schemas/ResponseFormat'
@@ -417,6 +423,7 @@ components:
           x-provider-support:
             anthropic: mapped to `thinking.budget_tokens`
             deepseek: mapped to `thinking.reasoning_effort`
+            openai: forced to `none` on gpt-6 when tools are present; `minimal` sent as `none` on gpt-6
             foundry: forced to `none` on gpt-6 when tools are present; `minimal` sent as `none` on gpt-6
         stream: { type: boolean }
         stream_options:
