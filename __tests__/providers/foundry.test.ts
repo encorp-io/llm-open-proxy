@@ -683,6 +683,21 @@ describe('sendFoundryRequest — Claude (api: anthropic)', () => {
     assert.deepEqual(usage, { prompt_tokens: 7, completion_tokens: 4, total_tokens: 11 });
   });
 
+  it("keeps Azure's gateway error message on send and stream (Entra 401 flat envelope)", async () => {
+    const azure401 = 'Unauthorized. Access token is missing, invalid, audience is incorrect, or have expired.';
+    installFetchMock(async () => jsonResponse({ statusCode: 401, message: azure401 }, 401));
+    const opts = {
+      endpoint: ENDPOINT,
+      api: 'anthropic' as const,
+      getToken: () => 'expired',
+      body: { model: 'claude-sonnet-5', messages: [{ role: 'user' as const, content: 'hi' }] },
+    };
+    const isAzure401 = (err: unknown) =>
+      err instanceof UpstreamError && err.statusCode === 401 && err.message === azure401;
+    await assert.rejects(sendFoundryRequest(opts), isAzure401);
+    await assert.rejects(streamFoundryRequest(opts), isAzure401);
+  });
+
   it('uses Entra ID bearer auth without leaking an x-api-key header', async () => {
     installFetchMock(async () => jsonResponse(claudeReply));
     await sendFoundryRequest({

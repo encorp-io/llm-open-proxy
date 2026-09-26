@@ -25,7 +25,7 @@ import {
   clampTemperature,
   stripReasoningContent,
 } from '../helpers.js';
-import { UpstreamError } from '../errors.js';
+import { UpstreamError, upstreamErrorMessage } from '../errors.js';
 import { parseRetryAfterMs } from '../retry.js';
 
 const ANTHROPIC_API_URL = 'https://api.anthropic.com/v1/messages';
@@ -595,9 +595,7 @@ async function anthropicFetch(
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({} as unknown));
-    const message =
-      (errorBody as { error?: { message?: string } })?.error?.message ??
-      `Anthropic API error ${res.status}`;
+    const message = upstreamErrorMessage(errorBody) ?? `Anthropic API error ${res.status}`;
     throw new UpstreamError(message, res.status, errorBody, parseRetryAfterMs(res.headers));
   }
 

@@ -805,6 +805,19 @@ describe('sendAnthropicRequest', () => {
     );
   });
 
+  it('reads a flat {statusCode, message} gateway envelope', async () => {
+    installFetchMock(async () =>
+      jsonResponse({ statusCode: 401, message: 'Unauthorized. Access token is missing' }, 401),
+    );
+    await assert.rejects(
+      sendAnthropicRequest({ apiKey: 'k', body: base }),
+      (err: unknown) =>
+        err instanceof UpstreamError &&
+        err.statusCode === 401 &&
+        err.message === 'Unauthorized. Access token is missing',
+    );
+  });
+
   it('throws UpstreamError with default message when body is unparseable', async () => {
     installFetchMock(
       async () => new Response('plain', { status: 500, headers: { 'Content-Type': 'text/plain' } }),

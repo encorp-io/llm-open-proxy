@@ -33,6 +33,20 @@ export class UpstreamError extends Error {
   }
 }
 
+/**
+ * Pull a human-readable message out of an upstream error body. Reads the
+ * common `{error: {message}}` envelope first, then a top-level `message` —
+ * the shape Azure gateways use for e.g. Entra ID auth failures
+ * (`{statusCode, message}`) and the Model Inference API's flat errors.
+ */
+export function upstreamErrorMessage(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const envelope = body as { error?: { message?: unknown }; message?: unknown };
+  if (typeof envelope.error?.message === 'string') return envelope.error.message;
+  if (typeof envelope.message === 'string') return envelope.message;
+  return undefined;
+}
+
 // Node, Bun, and Deno all honor this symbol for `console.log` / util.inspect
 // output. Environments without it (e.g. Cloudflare Workers' minimal console)
 // silently ignore it — they get the regular Error inspection.

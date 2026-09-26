@@ -25,8 +25,9 @@
  *    delta-less choices get `delta: {}` so OpenAI clients don't trip on them;
  *  - reasoning models that inline a leading `<think>…</think>` block
  *    (DeepSeek-R1 & co.) have it moved into `reasoning_content`;
- *  - every Azure error envelope yields a readable `UpstreamError.message`,
- *    and `getFoundryContentFilterError()` reads content-safety rejections.
+ *  - every Azure error envelope — including gateway-level ones on the Claude
+ *    route — yields a readable `UpstreamError.message`, and
+ *    `getFoundryContentFilterError()` reads content-safety rejections.
  *
  * Wire reference: https://learn.microsoft.com/azure/foundry/openai/api-version-lifecycle
  */
@@ -39,7 +40,7 @@ import type {
 import type { MapAction, ProviderParamConfig, TransformResult } from '../engine.js';
 import { transformChatRequest } from '../engine.js';
 import { modelMatches, resolveMaxCompletionTokens, stripReasoningContent } from '../helpers.js';
-import { UpstreamError } from '../errors.js';
+import { UpstreamError, upstreamErrorMessage } from '../errors.js';
 import { parseRetryAfterMs } from '../retry.js';
 import { SAMPLING_LOCKED_PREFIXES } from './openai.js';
 import { toAnthropicRequest, sendAnthropicRequest, streamAnthropicRequest } from './anthropic.js';
@@ -507,7 +508,7 @@ async function foundryFetch(
 
   if (!res.ok) {
     const errorBody = await res.json().catch(() => ({} as unknown));
-    const message = foundryErrorMessage(errorBody) ?? `Foundry error ${res.status}`;
+    const message = upstreamErrorMessage(errorBody) ?? `Foundry error ${res.status}`;
     throw new UpstreamError(message, res.status, errorBody, parseRetryAfterMs(res.headers));
   }
 
@@ -533,24 +534,10 @@ interface FoundryInnerError {
 }
 
 interface FoundryErrorEnvelope {
-  message?: unknown;
   code?: unknown;
   innererror?: FoundryInnerError;
   inner_error?: FoundryInnerError;
   error?: FoundryErrorEnvelope;
-}
-
-/**
- * Azure uses several envelopes: `{error: {message}}` (OpenAI surfaces),
- * `{statusCode, message}` (Entra token failures) and a flat
- * `{status, code, message}` (Model Inference API).
- */
-function foundryErrorMessage(body: unknown): string | undefined {
-  if (!body || typeof body !== 'object') return undefined;
-  const envelope = body as FoundryErrorEnvelope;
-  if (typeof envelope.error?.message === 'string') return envelope.error.message;
-  if (typeof envelope.message === 'string') return envelope.message;
-  return undefined;
 }
 
 export interface FoundryContentFilterError {
