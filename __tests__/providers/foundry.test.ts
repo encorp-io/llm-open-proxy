@@ -37,10 +37,13 @@ describe('foundryChatConfig', () => {
     logit_bias: { '1': 1 },
     logprobs: true,
     top_logprobs: 2,
+    stop: 'END',
   } as const;
 
-  for (const model of ['o3-mini', 'o1', 'o4-mini', 'gpt-5', 'GPT-5.1-chat']) {
-    it(`drops sampling/logprob controls on reasoning deployment ${model}`, () => {
+  // gpt-6 rejections verified live against Foundry (2026-09): temperature,
+  // top_p, both penalties, logprobs/top_logprobs, logit_bias and stop.
+  for (const model of ['o3-mini', 'o1', 'o4-mini', 'gpt-5', 'GPT-5.1-chat', 'gpt-6-luna', 'gpt-6-sol']) {
+    it(`drops sampling/logprob/stop controls on reasoning deployment ${model}`, () => {
       const { body, warnings } = transformChatRequest(
         { ...base, model, ...gated },
         foundryChatConfig,
@@ -56,7 +59,7 @@ describe('foundryChatConfig', () => {
     });
   }
 
-  it('keeps sampling/logprob controls on regular deployments', () => {
+  it('keeps sampling/logprob/stop controls on regular deployments', () => {
     const { body, warnings } = transformChatRequest({ ...base, ...gated }, foundryChatConfig, 'foundry');
     for (const [field, value] of Object.entries(gated)) assert.deepEqual(body[field], value);
     assert.deepEqual(warnings, []);
@@ -113,6 +116,50 @@ describe('foundryChatConfig', () => {
   });
 });
 
+describe('foundryChatConfig — reasoning_effort', () => {
+  const weather = { type: 'function' as const, function: { name: 'get_weather' } };
+  const convert = (req: Partial<CanonicalChatRequest>) =>
+    transformChatRequest({ ...base, ...req }, foundryChatConfig, 'foundry');
+
+  for (const reasoning_effort of [undefined, 'high'] as const) {
+    it(`forces 'none' on gpt-6 with function tools (reasoning_effort=${reasoning_effort})`, () => {
+      const { body, warnings } = convert({ model: 'gpt-6-sol', tools: [weather], reasoning_effort });
+      assert.equal(body.reasoning_effort, 'none');
+      assert.ok(warnings.some((w) => w.includes("reasoning_effort forced to 'none' for gpt-6-sol")));
+    });
+  }
+
+  it("maps 'minimal' to 'none' on gpt-6 (no minimal level)", () => {
+    const { body, warnings } = convert({ model: 'gpt-6-luna', reasoning_effort: 'minimal' });
+    assert.equal(body.reasoning_effort, 'none');
+    assert.ok(warnings.some((w) => w.includes("'minimal' unsupported on gpt-6-luna")));
+  });
+
+  it('passes other levels through on gpt-6 without tools (and with an empty tools array)', () => {
+    assert.equal(convert({ model: 'gpt-6-sol', reasoning_effort: 'high' }).body.reasoning_effort, 'high');
+    assert.equal(convert({ model: 'gpt-6-sol', tools: [], reasoning_effort: 'low' }).body.reasoning_effort, 'low');
+    const unset = convert({ model: 'gpt-6-sol' });
+    assert.equal(unset.body.reasoning_effort, undefined);
+    assert.deepEqual(unset.warnings, []);
+  });
+
+  it('leaves other models alone, tools or not', () => {
+    const { body, warnings } = convert({ model: 'DeepSeek-V4.1-Flash', tools: [weather], reasoning_effort: 'minimal' });
+    assert.equal(body.reasoning_effort, 'minimal');
+    assert.deepEqual(warnings, []);
+    assert.equal(convert({ model: 'gpt-5', tools: [weather] }).body.reasoning_effort, undefined);
+  });
+
+  it('applies the same rule on the Model Inference API', () => {
+    const { body } = transformChatRequest(
+      { ...base, model: 'gpt-6-sol', tools: [weather] },
+      foundryModelInferenceChatConfig,
+      'foundry',
+    );
+    assert.equal(body.reasoning_effort, 'none');
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Config — Model Inference API
 // ---------------------------------------------------------------------------
@@ -129,6 +176,31 @@ describe('foundryModelInferenceChatConfig', () => {
         .max_tokens,
       40,
     );
+  });
+
+  it('routes OpenAI reasoning deployments through their rules (max_completion_tokens, no sampling/stop)', () => {
+    const { body, warnings } = transformChatRequest(
+      {
+        ...base,
+        model: 'gpt-6-sol',
+        max_tokens: 64,
+        temperature: 0.5,
+        top_p: 0.9,
+        frequency_penalty: 0.1,
+        presence_penalty: 0.1,
+        stop: 'END',
+        seed: 1,
+      },
+      foundryModelInferenceChatConfig,
+      'foundry',
+    );
+    assert.equal(body.max_completion_tokens, 64);
+    assert.equal(body.max_tokens, undefined);
+    assert.equal(body.seed, 1);
+    for (const field of ['temperature', 'top_p', 'frequency_penalty', 'presence_penalty', 'stop']) {
+      assert.equal(body[field], undefined, `${field} should be dropped`);
+      assert.ok(warnings.some((w) => w.includes(`'${field}' unsupported on reasoning model gpt-6-sol`)));
+    }
   });
 
   it('wraps a string stop into an array and keeps arrays as-is', () => {
@@ -180,8 +252,6 @@ describe('foundryModelInferenceChatConfig', () => {
       logprobs: true,
       top_logprobs: 2,
       parallel_tool_calls: true,
-      reasoning_effort: 'high',
-      stream_options: { include_usage: true },
     } as const;
     const { body, warnings } = transformChatRequest(
       { ...base, ...dropped },
@@ -192,6 +262,17 @@ describe('foundryModelInferenceChatConfig', () => {
       assert.equal(body[field], undefined, `${field} should be dropped`);
       assert.ok(warnings.some((w) => w.includes(`'${field}' dropped for foundry`)), `warning for ${field}`);
     }
+  });
+
+  it('forwards reasoning_effort and stream_options (verified live despite the schema)', () => {
+    const { body, warnings } = transformChatRequest(
+      { ...base, model: 'DeepSeek-V4.1-Flash', reasoning_effort: 'low', stream_options: { include_usage: true } },
+      foundryModelInferenceChatConfig,
+      'foundry',
+    );
+    assert.equal(body.reasoning_effort, 'low');
+    assert.deepEqual(body.stream_options, { include_usage: true });
+    assert.deepEqual(warnings, []);
   });
 });
 
@@ -242,6 +323,19 @@ describe('buildFoundryUrl', () => {
       ),
       'https://res.openai.azure.com/openai/deployments/prod/chat/completions?api-version=2025-04-01-preview',
     );
+  });
+
+  it('uses the resource endpoint for APIs that project endpoints do not serve', () => {
+    const project = `${ENDPOINT}/api/projects/my-proj/`;
+    assert.equal(
+      buildFoundryUrl({ endpoint: project, api: 'openai-deployments' }, 'd'),
+      `${ENDPOINT}/openai/deployments/d/chat/completions?api-version=${FOUNDRY_DEPLOYMENTS_API_VERSION}`,
+    );
+    assert.equal(
+      buildFoundryUrl({ endpoint: project, api: 'model-inference' }, 'd'),
+      `${ENDPOINT}/models/chat/completions?api-version=${FOUNDRY_MODEL_INFERENCE_API_VERSION}`,
+    );
+    assert.equal(buildFoundryUrl({ endpoint: `${project}anthropic`, api: 'anthropic' }, 'c'), `${ENDPOINT}/anthropic/v1/messages`);
   });
 
   it('builds Model Inference URLs with the default api-version', () => {
@@ -314,31 +408,15 @@ describe('convertFoundryRequest', () => {
     assert.ok(warnings.some((w) => /max_tokens missing/.test(w)));
   });
 
-  it('drops reasoning_effort and stream_options on a GA dated api-version', () => {
+  it('uses the OpenAI-compatible config for the dated API, reasoning_effort included', () => {
+    // The GA api-version's published schema omits reasoning_effort and
+    // stream_options, but the service accepts both (verified live).
     const { body, warnings } = convertFoundryRequest(
       { ...base, reasoning_effort: 'high', stream_options: { include_usage: true } },
       { api: 'openai-deployments' },
     );
-    assert.equal(body.reasoning_effort, undefined);
-    assert.equal(body.stream_options, undefined);
-    for (const field of ['reasoning_effort', 'stream_options']) {
-      assert.ok(
-        warnings.some((w) => w.includes(`'${field}' dropped for foundry: api-version ${FOUNDRY_DEPLOYMENTS_API_VERSION}`)),
-      );
-    }
-  });
-
-  it('leaves GA dated requests without those fields untouched', () => {
-    const { warnings } = convertFoundryRequest(base, { api: 'openai-deployments', apiVersion: '2024-06-01' });
-    assert.deepEqual(warnings, []);
-  });
-
-  it('keeps reasoning_effort on a preview dated api-version', () => {
-    const { body, warnings } = convertFoundryRequest(
-      { ...base, reasoning_effort: 'high' },
-      { api: 'openai-deployments', apiVersion: '2025-04-01-preview' },
-    );
     assert.equal(body.reasoning_effort, 'high');
+    assert.deepEqual(body.stream_options, { include_usage: true });
     assert.deepEqual(warnings, []);
   });
 });
@@ -463,7 +541,7 @@ describe('sendFoundryRequest — OpenAI surfaces', () => {
     assert.equal(payloadOf().safe_prompt, true);
   });
 
-  it('routes the dated API to the deployment path and reports GA drops as warnings', async () => {
+  it('routes the dated API to the deployment path and forwards reasoning_effort', async () => {
     installFetchMock(async () => jsonResponse(completion({ content: 'x' })));
     const { warnings } = await sendFoundryRequest({
       endpoint: 'https://res.openai.azure.com',
@@ -476,8 +554,8 @@ describe('sendFoundryRequest — OpenAI surfaces', () => {
       calls[0].url,
       `https://res.openai.azure.com/openai/deployments/chat-prod/chat/completions?api-version=${FOUNDRY_DEPLOYMENTS_API_VERSION}`,
     );
-    assert.equal(payloadOf().reasoning_effort, undefined);
-    assert.ok(warnings.some((w) => /reasoning_effort/.test(w)));
+    assert.equal(payloadOf().reasoning_effort, 'low');
+    assert.deepEqual(warnings, []);
   });
 
   it('passes Azure content-filter annotations through on the response', async () => {
@@ -840,12 +918,12 @@ describe('streamFoundryRequest — Azure normalization', () => {
     assert.deepEqual(payloadOf().stream_options, { include_usage: true });
   });
 
-  it('does not send stream_options to GA dated or Model Inference APIs', async () => {
+  it('also requests stream usage on the GA dated and Model Inference APIs', async () => {
     installFetchMock(async () => sseResponse(['data: [DONE]\n\n']));
     await streamFoundryRequest({ endpoint: ENDPOINT, api: 'openai-deployments', apiKey: 'k', body: base });
     await streamFoundryRequest({ endpoint: ENDPOINT, api: 'model-inference', apiKey: 'k', body: base });
-    assert.equal(payloadOf(0).stream_options, undefined);
-    assert.equal(payloadOf(1).stream_options, undefined);
+    assert.deepEqual(payloadOf(0).stream_options, { include_usage: true });
+    assert.deepEqual(payloadOf(1).stream_options, { include_usage: true });
     assert.equal(payloadOf(1).stream, true);
   });
 

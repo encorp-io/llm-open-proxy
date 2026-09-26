@@ -6,14 +6,16 @@
  *
  *   - `openai-v1` (default): basic, streaming, tool calling
  *   - `openai-deployments`: the dated Azure OpenAI API on the same deployment
+ *   - `model-inference`: the deprecated Azure AI Model Inference API
  *   - `anthropic`: Claude on Foundry, basic + streaming (opt-in, needs a
  *     Claude deployment)
- *   - reasoning: a non-OpenAI reasoning deployment (e.g. DeepSeek-R1) must
- *     surface `reasoning_content`, whether the service returns it natively or
- *     inline as `<think>` tags (opt-in)
+ *   - reasoning: a non-OpenAI reasoning deployment (e.g. DeepSeek) must
+ *     surface `reasoning_content` — non-streaming and streaming — whether the
+ *     service returns it natively or inline as `<think>` tags (opt-in)
  *
- * Required: FOUNDRY_ENDPOINT (e.g. https://my-res.services.ai.azure.com)
- * and FOUNDRY_API_KEY. `model` is the *deployment* name.
+ * Required: FOUNDRY_ENDPOINT (resource or project endpoint, e.g.
+ * https://my-res.services.ai.azure.com) and FOUNDRY_API_KEY. `model` is the
+ * *deployment* name — set FOUNDRY_MODEL to one that exists.
  */
 
 import { test } from 'node:test';
@@ -28,6 +30,7 @@ import {
   collectSseContent,
   call,
 } from './helpers.js';
+import type { CanonicalChatRequest } from '../../src/index.js';
 
 const endpoint = process.env.FOUNDRY_ENDPOINT ?? '';
 const apiKey = process.env.FOUNDRY_API_KEY ?? '';
@@ -85,6 +88,13 @@ test('foundry dated API — deployment-scoped request returns canonical response
   assertCanonicalResponse(response);
 });
 
+test('foundry model inference API — legacy request returns canonical response', skipUnless('FOUNDRY_ENDPOINT', 'FOUNDRY_API_KEY'), async () => {
+  const { response } = await call(() =>
+    sendFoundryRequest({ ...target, api: 'model-inference', body: buildMinimalRequest(model) }),
+  );
+  assertCanonicalResponse(response);
+});
+
 test('foundry claude — basic request returns canonical response', skipUnless('FOUNDRY_ENDPOINT', 'FOUNDRY_API_KEY', 'FOUNDRY_CLAUDE_MODEL'), async () => {
   const { response, usage } = await call(() =>
     sendFoundryRequest({ ...target, api: 'anthropic', body: buildMinimalRequest(claudeModel) }),
@@ -101,21 +111,41 @@ test('foundry claude — streaming bridges to OpenAI SSE', skipUnless('FOUNDRY_E
   assert.ok(content.length > 0, 'expected at least one content delta');
 });
 
+// Some reasoners think by default (DeepSeek-R1); others only when asked
+// (DeepSeek V4.x), so the request opts in via reasoning_effort.
+function reasonerRequest(): CanonicalChatRequest {
+  return {
+    model: reasonerModel,
+    messages: [{ role: 'user', content: 'What is 17 * 23? Think step by step, then give the final number.' }],
+    max_completion_tokens: 2048,
+    reasoning_effort: 'low',
+  };
+}
+
 test('foundry reasoner — surfaces reasoning_content', skipUnless('FOUNDRY_ENDPOINT', 'FOUNDRY_API_KEY', 'FOUNDRY_REASONER_MODEL'), async () => {
-  const { response } = await call(() =>
-    sendFoundryRequest({
-      ...target,
-      body: {
-        model: reasonerModel,
-        messages: [{ role: 'user', content: 'What is 17 * 23? Think step by step, then give the final number.' }],
-        max_completion_tokens: 2048,
-      },
-    }),
-  );
+  const { response } = await call(() => sendFoundryRequest({ ...target, body: reasonerRequest() }));
   const message = response.choices[0]!.message;
   assert.ok(
     typeof message.reasoning_content === 'string' && message.reasoning_content.length > 0,
     `expected reasoning_content, got: ${JSON.stringify(message, null, 2)}`,
   );
   assert.ok(!String(message.content).includes('<think>'), 'think tags must not leak into content');
+});
+
+test('foundry reasoner — streams reasoning_content deltas separately from content', skipUnless('FOUNDRY_ENDPOINT', 'FOUNDRY_API_KEY', 'FOUNDRY_REASONER_MODEL'), async () => {
+  const { stream } = await call(() => streamFoundryRequest({ ...target, body: reasonerRequest() }));
+  const text = await new Response(stream).text();
+  let content = '';
+  let reasoning = '';
+  for (const event of text.split('\n\n')) {
+    const payload = event.replace(/^data: /, '');
+    if (!payload || payload === '[DONE]') continue;
+    const delta = (JSON.parse(payload) as { choices?: Array<{ delta?: { content?: string; reasoning_content?: string } }> })
+      .choices?.[0]?.delta;
+    content += delta?.content ?? '';
+    reasoning += delta?.reasoning_content ?? '';
+  }
+  assert.ok(reasoning.length > 0, 'expected reasoning_content deltas');
+  assert.ok(content.includes('391'), `expected the answer in content, got: ${JSON.stringify(content)}`);
+  assert.ok(!content.includes('<think>'), 'think tags must not leak into content');
 });

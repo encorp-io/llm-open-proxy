@@ -61,22 +61,72 @@ const DEFAULT_TIMEOUT_MS = 600_000;
 // ---------------------------------------------------------------------------
 
 /**
- * Azure OpenAI reasoning models (o-series, gpt-5) reject sampling and
- * logprob controls. Foundry `model` is a deployment name, so detection is
- * best-effort: it works when deployments are named after their model.
+ * Azure OpenAI reasoning models (o-series, gpt-5, gpt-6) reject sampling,
+ * penalty, logprob and `stop` controls. Foundry `model` is a deployment name,
+ * so detection is best-effort: it works when deployments are named after
+ * their model.
  */
-function droppedOnReasoningModels(field: keyof CanonicalChatRequest): MapAction {
+function isReasoningModel(model: string): boolean {
+  return modelMatches(model, SAMPLING_LOCKED_PREFIXES);
+}
+
+function droppedOnReasoningModels(
+  field: keyof CanonicalChatRequest,
+  transform: (value: unknown) => unknown = (value) => value,
+): MapAction {
   return {
     kind: 'custom',
     apply(body, value, ctx) {
-      if (modelMatches(ctx.fullRequest.model, SAMPLING_LOCKED_PREFIXES)) {
+      if (isReasoningModel(ctx.fullRequest.model)) {
         ctx.warn(`'${field}' unsupported on reasoning model ${ctx.fullRequest.model} -- dropped`);
         return;
       }
-      body[field] = value;
+      body[field] = transform(value);
     },
   };
 }
+
+/**
+ * GPT-6 on Chat Completions only accepts function tools alongside
+ * `reasoning_effort: 'none'` — omitting it still fails, since the model
+ * reasons by default — and it has no `minimal` level (its lowest is `none`).
+ * Verified against Foundry for gpt-6-luna and gpt-6-sol.
+ */
+const TOOLS_NEED_NO_REASONING_PREFIXES = ['gpt-6'] as const;
+
+const foundryReasoningEffort: MapAction = {
+  kind: 'always',
+  apply(body, value, ctx) {
+    const { model, tools } = ctx.fullRequest;
+    if (modelMatches(model, TOOLS_NEED_NO_REASONING_PREFIXES)) {
+      if (tools && tools.length > 0) {
+        ctx.warn(`reasoning_effort forced to 'none' for ${model} -- function tools on chat completions require it`);
+        body.reasoning_effort = 'none';
+        return;
+      }
+      if (value === 'minimal') {
+        ctx.warn(`reasoning_effort 'minimal' unsupported on ${model} -- sent as 'none'`);
+        body.reasoning_effort = 'none';
+        return;
+      }
+    }
+    if (value !== undefined) body.reasoning_effort = value;
+  },
+};
+
+/**
+ * The Model Inference API expects `max_tokens`, but it forwards OpenAI
+ * models to Azure OpenAI, whose reasoning deployments reject `max_tokens`
+ * and require `max_completion_tokens`.
+ */
+const modelInferenceMaxTokens: MapAction = {
+  kind: 'custom',
+  apply(body, _value, ctx) {
+    const resolved = resolveMaxCompletionTokens(ctx.fullRequest);
+    const field = isReasoningModel(ctx.fullRequest.model) ? 'max_completion_tokens' : 'max_tokens';
+    if (resolved !== undefined) body[field] = resolved;
+  },
+};
 
 /** Config for the OpenAI-compatible surfaces (`openai-v1`, `openai-deployments`). */
 export const foundryChatConfig: ProviderParamConfig = {
@@ -92,7 +142,7 @@ export const foundryChatConfig: ProviderParamConfig = {
       if (resolved !== undefined) body.max_completion_tokens = resolved;
     },
   },
-  stop: { kind: 'passthrough' },
+  stop: droppedOnReasoningModels('stop'),
   frequency_penalty: droppedOnReasoningModels('frequency_penalty'),
   presence_penalty: droppedOnReasoningModels('presence_penalty'),
   logit_bias: droppedOnReasoningModels('logit_bias'),
@@ -104,32 +154,28 @@ export const foundryChatConfig: ProviderParamConfig = {
   tools: { kind: 'passthrough' },
   tool_choice: { kind: 'passthrough' },
   parallel_tool_calls: { kind: 'passthrough' },
-  reasoning_effort: { kind: 'passthrough' },
+  reasoning_effort: foundryReasoningEffort,
   stream: { kind: 'passthrough' },
   stream_options: { kind: 'passthrough' },
 };
 
 /**
  * Config for the deprecated Azure AI Model Inference API (`model-inference`).
- * Its schema is narrower than OpenAI's and unknown fields are rejected unless
- * the `extra-parameters` header says otherwise, so unsupported fields drop.
+ * Its published schema is narrower than OpenAI's and unknown fields are
+ * rejected unless the `extra-parameters` header says otherwise, so fields
+ * outside it drop. `reasoning_effort` and `stream_options` are outside the
+ * schema too but verified to be forwarded, so they pass.
  */
 export const foundryModelInferenceChatConfig: ProviderParamConfig = {
-  temperature: { kind: 'passthrough' },
-  top_p: { kind: 'passthrough' },
+  temperature: droppedOnReasoningModels('temperature'),
+  top_p: droppedOnReasoningModels('top_p'),
   top_k: { kind: 'drop', reason: 'not in the Model Inference schema (send via provider_options with extraParameters)' },
   n: { kind: 'drop', reason: 'the Model Inference API only supports n=1' },
-  max_completion_tokens: { kind: 'rename', to: 'max_tokens' },
-  max_tokens: {
-    kind: 'custom',
-    apply(body, _value, ctx) {
-      const resolved = resolveMaxCompletionTokens(ctx.fullRequest);
-      if (resolved !== undefined) body.max_tokens = resolved;
-    },
-  },
-  stop: { kind: 'rename', to: 'stop', transform: (v) => (Array.isArray(v) ? v : [v]) },
-  frequency_penalty: { kind: 'passthrough' },
-  presence_penalty: { kind: 'passthrough' },
+  max_completion_tokens: modelInferenceMaxTokens,
+  max_tokens: modelInferenceMaxTokens,
+  stop: droppedOnReasoningModels('stop', (v) => (Array.isArray(v) ? v : [v])),
+  frequency_penalty: droppedOnReasoningModels('frequency_penalty'),
+  presence_penalty: droppedOnReasoningModels('presence_penalty'),
   logit_bias: { kind: 'drop', reason: 'not in the Model Inference schema' },
   seed: { kind: 'passthrough' },
   user: { kind: 'drop', reason: 'not in the Model Inference schema' },
@@ -139,9 +185,9 @@ export const foundryModelInferenceChatConfig: ProviderParamConfig = {
   tools: { kind: 'passthrough' },
   tool_choice: { kind: 'passthrough' },
   parallel_tool_calls: { kind: 'drop', reason: 'not in the Model Inference schema' },
-  reasoning_effort: { kind: 'drop', reason: 'not in the Model Inference schema' },
+  reasoning_effort: foundryReasoningEffort,
   stream: { kind: 'passthrough' },
-  stream_options: { kind: 'drop', reason: 'not in the Model Inference schema' },
+  stream_options: { kind: 'passthrough' },
 };
 
 // ---------------------------------------------------------------------------
@@ -221,6 +267,8 @@ export interface FoundryTarget {
    * `https://my-res.openai.azure.com` or
    * `https://my-res.services.ai.azure.com/api/projects/my-project`.
    * A trailing API prefix (`/openai/v1`, `/models`, `/anthropic`, …) is tolerated.
+   * Only `openai-v1` is served on project endpoints; for the other APIs the
+   * `/api/projects/{project}` part is dropped and the resource endpoint used.
    */
   endpoint?: string;
   /**
@@ -255,11 +303,6 @@ function resolveApiVersion(api: FoundryApi, apiVersion: string | undefined): str
   return undefined;
 }
 
-/** Dated GA api-versions (no `-preview` suffix) predate `stream_options` and `reasoning_effort`. */
-function isGaApiVersion(apiVersion: string | undefined): boolean {
-  return apiVersion !== undefined && !/-preview$/i.test(apiVersion);
-}
-
 /** Build the chat request URL for a Foundry target. Pure — no I/O. */
 export function buildFoundryUrl(target: FoundryTarget, model: string): string {
   if (target.url) return target.url;
@@ -275,6 +318,9 @@ export function buildFoundryUrl(target: FoundryTarget, model: string): string {
       break;
     }
   }
+  // Project endpoints answer the dated, Model Inference and Claude routes with
+  // "API version not supported"; those APIs live on the resource endpoint.
+  if (api !== 'openai-v1') base = base.replace(/\/api\/projects\/[^/]+$/i, '');
 
   const apiVersion = resolveApiVersion(api, target.apiVersion);
   const query = apiVersion ? `?api-version=${encodeURIComponent(apiVersion)}` : '';
@@ -296,10 +342,7 @@ export function buildFoundryUrl(target: FoundryTarget, model: string): string {
 
 export interface FoundryConvertOptions {
   api?: FoundryApi;
-  apiVersion?: string;
 }
-
-const GA_UNSUPPORTED_FIELDS = ['reasoning_effort', 'stream_options'] as const;
 
 /**
  * Canonical request → body for the chosen Foundry surface. Claude
@@ -319,19 +362,7 @@ export function convertFoundryRequest(
 
   const prepared = { ...canonical, messages: stripReasoningContent(canonical.messages) };
   const config = api === 'model-inference' ? foundryModelInferenceChatConfig : foundryChatConfig;
-  const result = transformChatRequest(prepared, config, 'foundry');
-
-  const apiVersion = resolveApiVersion(api, opts.apiVersion);
-  if (api === 'openai-deployments' && isGaApiVersion(apiVersion)) {
-    for (const field of GA_UNSUPPORTED_FIELDS) {
-      if (result.body[field] === undefined) continue;
-      delete result.body[field];
-      result.warnings.push(
-        `'${field}' dropped for foundry: api-version ${apiVersion} does not support it (use a -preview api-version or api 'openai-v1')`,
-      );
-    }
-  }
-  return result;
+  return transformChatRequest(prepared, config, 'foundry');
 }
 
 // ---------------------------------------------------------------------------
@@ -401,7 +432,7 @@ export async function sendFoundryRequest(opts: FoundrySendOptions): Promise<Foun
     });
   }
 
-  const { body, warnings } = convertFoundryRequest(opts.body, { api, apiVersion: opts.apiVersion });
+  const { body, warnings } = convertFoundryRequest(opts.body, { api });
   // stream_options is only valid alongside stream: true.
   delete body.stream_options;
   const res = await foundryFetch(url, headers, { ...body, stream: false }, opts);
@@ -428,19 +459,15 @@ export async function streamFoundryRequest(opts: FoundrySendOptions): Promise<Fo
     return { ...result, getPromptFilterResults: () => [] };
   }
 
-  const { body, warnings } = convertFoundryRequest(opts.body, { api, apiVersion: opts.apiVersion });
-  const upstreamBody: Record<string, unknown> = { ...body, stream: true };
-  // Usage in the stream needs stream_options, which the Model Inference API
-  // and dated GA api-versions reject.
-  const supportsStreamUsage =
-    api === 'openai-v1' ||
-    (api === 'openai-deployments' && !isGaApiVersion(resolveApiVersion(api, opts.apiVersion)));
-  if (supportsStreamUsage) {
-    upstreamBody.stream_options = {
-      ...(body.stream_options as Record<string, unknown> | undefined),
-      include_usage: true,
-    };
-  }
+  const { body, warnings } = convertFoundryRequest(opts.body, { api });
+  // Every OpenAI-compatible API accepts stream_options — including dated GA
+  // api-versions and the Model Inference API, whose published schemas omit
+  // it — and OpenAI models only report stream usage when asked.
+  const upstreamBody: Record<string, unknown> = {
+    ...body,
+    stream: true,
+    stream_options: { ...(body.stream_options as Record<string, unknown> | undefined), include_usage: true },
+  };
 
   const res = await foundryFetch(url, headers, upstreamBody, opts);
   if (!res.body) {

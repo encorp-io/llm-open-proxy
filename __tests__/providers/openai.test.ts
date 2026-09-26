@@ -28,7 +28,7 @@ const asBody = (b: object): Record<string, unknown> => b as Record<string, unkno
 // ---------------------------------------------------------------------------
 
 describe('openaiChatConfig — sampling-locked models', () => {
-  for (const model of ['gpt-5', 'GPT-5-turbo', 'o1', 'o3-mini', 'o4-pro']) {
+  for (const model of ['gpt-5', 'GPT-5-turbo', 'gpt-6-sol', 'o1', 'o3-mini', 'o4-pro']) {
     it(`drops temperature with warning on ${model}`, () => {
       const { body, warnings } = transformChatRequest(
         { ...base, model, temperature: 0.5 },

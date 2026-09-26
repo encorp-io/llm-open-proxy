@@ -27,7 +27,7 @@ export const OPENAI_API_URL = 'https://api.openai.com/v1/chat/completions';
  * model default is accepted). Also used by the Microsoft Foundry adapter,
  * which serves the same Azure OpenAI models.
  */
-export const SAMPLING_LOCKED_PREFIXES = ['gpt-5', 'o1', 'o3', 'o4'] as const;
+export const SAMPLING_LOCKED_PREFIXES = ['gpt-5', 'gpt-6', 'o1', 'o3', 'o4'] as const;
 
 export const openaiChatConfig: ProviderParamConfig = {
   temperature: {

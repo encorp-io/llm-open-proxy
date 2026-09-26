@@ -302,15 +302,15 @@ components:
           maximum: 2
           x-provider-support:
             anthropic: clamped to ≤ 1
-            openai: dropped on gpt-5 / o-series
-            foundry: dropped on gpt-5 / o-series deployments
+            openai: dropped on gpt-5 / gpt-6 / o-series
+            foundry: dropped on gpt-5 / gpt-6 / o-series deployments
         top_p:
           type: number
           minimum: 0
           maximum: 1
           x-provider-support:
-            openai: dropped on gpt-5 / o-series
-            foundry: dropped on gpt-5 / o-series deployments
+            openai: dropped on gpt-5 / gpt-6 / o-series
+            foundry: dropped on gpt-5 / gpt-6 / o-series deployments
         top_k:
           type: integer
           x-provider-support:
@@ -346,21 +346,21 @@ components:
               items: { type: string }
           x-provider-support:
             anthropic: renamed to `stop_sequences`
-            foundry: wrapped as an array on the Model Inference API
+            foundry: dropped on reasoning deployments; wrapped as an array on the Model Inference API
         frequency_penalty:
           type: number
           x-provider-support:
             anthropic: dropped
             deepseek: dropped (deprecated v4)
             perplexity: dropped
-            foundry: dropped on gpt-5 / o-series deployments
+            foundry: dropped on reasoning deployments
         presence_penalty:
           type: number
           x-provider-support:
             anthropic: dropped
             deepseek: dropped (deprecated v4)
             perplexity: dropped
-            foundry: dropped on gpt-5 / o-series deployments
+            foundry: dropped on reasoning deployments
         logit_bias:
           type: object
           additionalProperties: { type: number }
@@ -417,7 +417,7 @@ components:
           x-provider-support:
             anthropic: mapped to `thinking.budget_tokens`
             deepseek: mapped to `thinking.reasoning_effort`
-            foundry: dropped on GA dated api-versions and the Model Inference API
+            foundry: forced to `none` on gpt-6 when tools are present; `minimal` sent as `none` on gpt-6
         stream: { type: boolean }
         stream_options:
           type: object
