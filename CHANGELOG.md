@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/encorp-io/llm-open-proxy/compare/@encorp.ai/llm-open-proxy-v0.2.2...@encorp.ai/llm-open-proxy-v0.3.0) (2026-10-10)
+
+
+### Features
+
+* add Microsoft Foundry provider (Azure OpenAI, Foundry Models, Claude) ([dd13123](https://github.com/encorp-io/llm-open-proxy/commit/dd13123f2f98bc835424b39675c1e165a8a5ebc2))
+* add Microsoft Foundry provider (Azure OpenAI, Foundry Models, Claude) ([cab3289](https://github.com/encorp-io/llm-open-proxy/commit/cab328987db8a4ae01921fd648990aba13d7a7b0))
+
+
+### Bug Fixes
+
+* **anthropic:** per-family rules for current Claude models ([1ae399b](https://github.com/encorp-io/llm-open-proxy/commit/1ae399b9243c1619a7bfd0a8736a817bcc0f1bd3))
+* **anthropic:** per-family rules for current Claude models ([34af065](https://github.com/encorp-io/llm-open-proxy/commit/34af06579da02a88ca430918bb6588ab57b19bb6))
+* **foundry:** handle GPT-6 and project endpoints found in live testing ([80f6821](https://github.com/encorp-io/llm-open-proxy/commit/80f6821753db39e5e0b18467b5f75245b747080a))
+* keep Azure error messages on Claude-on-Foundry; bump example dep ([6ab4028](https://github.com/encorp-io/llm-open-proxy/commit/6ab402858bc862ba970819315e3eb1c7306795db))
+* **openai:** apply GPT-6 reasoning-model rules to the OpenAI config ([88689e0](https://github.com/encorp-io/llm-open-proxy/commit/88689e0c406c5f7db12dea96ff58227bfbba5924))
+* per-family reasoning-model rules; forward mid-stream errors ([ea9e260](https://github.com/encorp-io/llm-open-proxy/commit/ea9e2609b79ba509fdbf0dc7fae1f345ee683511))
+
 ## [0.2.2](https://github.com/encorp-io/llm-open-proxy/compare/@encorp.ai/llm-open-proxy-v0.2.1...@encorp.ai/llm-open-proxy-v0.2.2) (2026-05-16)
 
 
