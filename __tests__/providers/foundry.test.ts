@@ -428,6 +428,17 @@ describe('convertFoundryRequest', () => {
     assert.ok(warnings.some((w) => /max_tokens missing/.test(w)));
   });
 
+  it('applies the Claude family rules on api anthropic', () => {
+    const { body, warnings } = convertFoundryRequest(
+      { model: 'claude-opus-4-7', messages: [{ role: 'user', content: 'u' }], temperature: 0.2, reasoning_effort: 'xhigh' },
+      { api: 'anthropic' },
+    );
+    assert.equal(body.temperature, undefined);
+    assert.deepEqual(body.thinking, { type: 'adaptive' });
+    assert.deepEqual(body.output_config, { effort: 'xhigh' });
+    assert.ok(warnings.includes("'temperature' unsupported on claude-opus-4-7 -- dropped"));
+  });
+
   it('uses the OpenAI-compatible config for the dated API, reasoning_effort included', () => {
     // The GA api-version's published schema omits reasoning_effort and
     // stream_options, but the service accepts both (verified live).

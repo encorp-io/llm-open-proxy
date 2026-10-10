@@ -5,6 +5,7 @@ dist
 coverage
 _site
 docs/typedoc
+validate-claude-rules.json
 *.tsbuildinfo
 .DS_Store
 

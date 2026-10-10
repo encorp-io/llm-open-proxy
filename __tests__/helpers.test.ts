@@ -8,6 +8,7 @@ import {
   modelMatches,
   ANTHROPIC_DEFAULT_MAX_TOKENS,
   ANTHROPIC_THINKING_BUDGET,
+  ANTHROPIC_EFFORT,
 } from '../src/helpers.js';
 import type { CanonicalChatRequest, ChatMessage } from '../src/types.js';
 
@@ -174,5 +175,15 @@ describe('module constants', () => {
     assert.equal(ANTHROPIC_THINKING_BUDGET.high, 32768);
     assert.equal(ANTHROPIC_THINKING_BUDGET.xhigh, 32768);
     assert.ok(!('none' in ANTHROPIC_THINKING_BUDGET), "'none' means no thinking, so it has no budget");
+  });
+
+  it('exposes the Anthropic effort table', () => {
+    assert.deepEqual(ANTHROPIC_EFFORT, {
+      minimal: 'low',
+      low: 'low',
+      medium: 'medium',
+      high: 'high',
+      xhigh: 'xhigh',
+    });
   });
 });

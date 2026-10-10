@@ -245,11 +245,13 @@ docs specify; the dated and Model Inference APIs historically use
   Set `extraParameters: 'pass-through'` to forward model-specific fields
   from `provider_options.foundry`.
 
-**Known limitation — current Claude models.** Claude Opus 4.7+ and the 5.x
-family reject `temperature`, `top_p`, `top_k` and budget-based thinking
-(what `reasoning_effort` maps to), on Foundry and on Anthropic's own API
-alike. The Anthropic translator does not adapt to that yet, so leave those
-fields out when targeting these models.
+**Claude models.** `api: 'anthropic'` uses the Anthropic translator, so
+the [Claude model-family rules](#claude-model-families) apply on Foundry
+too. They are picked by model id, and on Foundry `model` is the deployment
+name: name Claude deployments after the model (`claude-opus-4-7`, or any
+name containing it, such as `prod-claude-opus-4-7`). A deployment name
+without the model id gets the rules for older models: sampling controls
+forwarded, budget thinking.
 
 Layer 1 works too: `convertChatRequest(canonical, 'foundry')` targets the
 OpenAI-compatible surfaces, and `convertFoundryRequest(canonical, { api })`
@@ -259,22 +261,55 @@ targets any of them. `buildFoundryUrl` builds the matching URL.
 
 | Canonical field        | OpenAI                        | Anthropic                                                  | Google | DeepSeek                          | Perplexity        | Foundry (OpenAI APIs)¹                         |
 |------------------------|-------------------------------|------------------------------------------------------------|--------|-----------------------------------|-------------------|------------------------------------------------|
-| `temperature`          | ✓ (dropped while a reasoning model reasons) | clamped to ≤ 1.0                                           | ✓      | ✓                                 | ✓                 | ✓ (dropped while a reasoning deployment reasons) |
-| `top_p` / `top_k`      | top_p only                    | both                                                       | both   | top_p only                        | top_p only        | top_p only                                     |
-| `max_completion_tokens`| ✓                             | renamed to `max_tokens` (required, defaulted to 4096)      | ✓      | renamed to `max_tokens`           | renamed           | ✓ (`max_tokens` on Model Inference)            |
+| `temperature`          | ✓ (dropped while a reasoning model reasons) | clamped to ≤ 1.0; dropped on Opus 4.7+ / 5.x and, unless 1, while budget thinking is on² | ✓      | ✓                                 | ✓                 | ✓ (dropped while a reasoning deployment reasons) |
+| `top_p` / `top_k`      | top_p only                    | both; dropped on Opus 4.7+ / 5.x, and top_k (or top_p < 0.95) while budget thinking is on² | both   | top_p only                        | top_p only        | top_p only                                     |
+| `max_completion_tokens`| ✓                             | renamed to `max_tokens` (required; defaulted to 4096 plus the thinking budget) | ✓      | renamed to `max_tokens`           | renamed           | ✓ (`max_tokens` on Model Inference)            |
 | `stop`                 | ✓ (reasoning models: o1 / o3-mini only) | renamed to `stop_sequences`                                | ✓      | ✓                                 | ✓                 | ✓ (reasoning deployments: o1 / o3-mini only) |
 | `tools`, `tool_choice` | ✓                             | reshaped to `input_schema` + `{type, name}`                | ✓      | ✓                                 | tool_choice dropped | ✓                                            |
-| `response_format`      | ✓                             | translated to `output_config`                              | ✓      | ✓                                 | ✓                 | ✓                                              |
-| `reasoning_effort`     | ✓ (mapped to a level the model has; `none` with tools on GPT-5.4+) | mapped to `thinking.budget_tokens`                         | ✓      | mapped to `thinking.reasoning_effort` | ✓             | ✓ (same rules as OpenAI) |
+| `response_format`      | ✓                             | translated to `output_config.format`                       | ✓      | ✓                                 | ✓                 | ✓                                              |
+| `reasoning_effort`     | ✓ (mapped to a level the model has; `none` with tools on GPT-5.4+) | Opus 4.7+ / 5.x: adaptive thinking + `output_config.effort`; older: `thinking.budget_tokens`, kept below `max_tokens`² | ✓      | mapped to `thinking.reasoning_effort` | ✓             | ✓ (same rules as OpenAI) |
 | Message reshape        | —                             | system extraction, tool_use/tool_result blocks, image blocks | —    | preserves `reasoning_content`     | —                 | —                                              |
 | Response → canonical   | —                             | `tool_use` → `tool_calls`, stop_reason mapping             | —      | —                                 | —                 | leading `<think>` → `reasoning_content`        |
 | Streaming SSE bridge   | passthrough                   | full Anthropic→OpenAI event translation                    | passthrough | passthrough                  | passthrough       | Azure filter-chunk normalization               |
 
 ¹ Claude on Foundry (`api: 'anthropic'`) uses the Anthropic column.
+² Per Claude model family — see [Claude model families](#claude-model-families).
 
 Every dropped / clamped / renamed field is reported in the `warnings`
 array, so you can surface them to operators in logs. Nothing fails
 silently.
+
+### Claude model families
+
+Current Claude models reject `temperature`, `top_p`, `top_k` and
+budget-based thinking (`thinking: {type: 'enabled', budget_tokens}`). They
+take adaptive thinking plus `output_config.effort` instead. The Anthropic
+translator, which also serves Claude on Foundry, picks the rules from the
+model id. Date suffixes (`claude-haiku-4-5-20251001`) are fine, and the id
+can sit inside a longer Foundry deployment name. Every change comes with a
+warning.
+
+| Family | Sampling controls | `reasoning_effort` | `reasoning_effort: 'none'` |
+|---|---|---|---|
+| Opus 4.7, Opus 4.8 | dropped | `thinking: {type: 'adaptive'}` + `output_config.effort` | nothing sent (thinking is off by default) |
+| Opus 5, Sonnet 5, Haiku 5.5 | dropped | same | `thinking: {type: 'disabled'}` (thinking is on by default) |
+| Opus 5.5, Sonnet 5.5, Fable 5 / 5.1, Mythos 5 / 5.1 | dropped | same | `output_config.effort: 'low'` (thinking can't be turned off) |
+| Anything else (Haiku 4.5, Sonnet 4.5 / 4.6, Opus 4.6, older, unknown) | forwarded; while budget thinking is on, only `temperature: 1` and `top_p` ≥ 0.95 are kept, and `top_k` is dropped | `thinking.budget_tokens` (1024 / 4096 / 16384 / 32768 / 32768 for minimal → xhigh) | nothing sent |
+
+- **Effort levels.** `low`, `medium`, `high` and `xhigh` map one to one.
+  `minimal` is sent as `low`.
+- **`max_tokens`.** Thinking counts toward `max_tokens`. If you omit it,
+  the default is 4096 plus the requested effort's budget (e.g. 36864 for
+  `high`). If you set it and a budget doesn't fit under it, the budget is
+  clamped to `max_tokens - 1`. If even the 1024-token minimum doesn't fit,
+  thinking stays off.
+- **`response_format`** is merged into `output_config` next to `effort`.
+
+The sampling and thinking rules for Opus 4.7, Opus 5 / 5.5, Sonnet 5 / 5.5
+and Haiku 5.5 were verified live against Anthropic's API. Opus 4.8, Fable
+and Mythos follow Anthropic's model documentation, as does the handling of
+`'none'`. `scripts/validate-claude-rules.mjs` re-checks every row live, in
+both directions.
 
 ## Provider-specific escape hatch
 

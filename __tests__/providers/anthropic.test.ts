@@ -207,6 +207,218 @@ describe('anthropicChatConfig — scalar mapping', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Config — budget thinking on older / unknown families
+// ---------------------------------------------------------------------------
+
+const toAnthropic = (req: Partial<CanonicalChatRequest>) =>
+  transformChatRequest({ ...base, ...req }, anthropicChatConfig, 'anthropic');
+
+describe('anthropicChatConfig — budget thinking (older models)', () => {
+  it('raises the default max_tokens by the thinking budget so budget_tokens fits under it', () => {
+    const { body, warnings } = toAnthropic({ reasoning_effort: 'high' });
+    assert.deepEqual(body.thinking, { type: 'enabled', budget_tokens: 32768 });
+    assert.equal(body.max_tokens, 32768 + 4096);
+    assert.ok(warnings.some((w) => /max_tokens missing -- defaulted to 36864 \(Anthropic requires it; 4096 plus 32768 for reasoning_effort 'high'\)/.test(w)));
+  });
+
+  it('keeps the plain 4096 default when no thinking is requested', () => {
+    for (const reasoning_effort of [undefined, 'none'] as const) {
+      const { body } = toAnthropic({ reasoning_effort });
+      assert.equal(body.max_tokens, 4096);
+    }
+  });
+
+  it('keeps the budget when it is already below an explicit max_tokens', () => {
+    const { body, warnings } = toAnthropic({ reasoning_effort: 'low', max_completion_tokens: 8000 });
+    assert.deepEqual(body.thinking, { type: 'enabled', budget_tokens: 4096 });
+    assert.equal(body.max_tokens, 8000);
+    assert.ok(!warnings.some((w) => /thinking|max_tokens/.test(w)));
+  });
+
+  it('clamps the budget below an explicit max_tokens, with a warning', () => {
+    const { body, warnings } = toAnthropic({ reasoning_effort: 'medium', max_tokens: 2000 });
+    assert.deepEqual(body.thinking, { type: 'enabled', budget_tokens: 1999 });
+    assert.equal(body.max_tokens, 2000);
+    assert.ok(warnings.some((w) => /thinking budget 16384 clamped to 1999 to fit under max_tokens 2000/.test(w)));
+  });
+
+  it('clamps when the budget equals max_tokens (budget_tokens must be strictly below it)', () => {
+    const { body } = toAnthropic({ reasoning_effort: 'low', max_completion_tokens: 4096 });
+    assert.deepEqual(body.thinking, { type: 'enabled', budget_tokens: 4095 });
+  });
+
+  it('leaves thinking off, with a warning, when max_tokens has no room for the minimum budget', () => {
+    const { body, warnings } = toAnthropic({ reasoning_effort: 'minimal', max_completion_tokens: 1024 });
+    assert.equal(body.thinking, undefined);
+    assert.equal(body.max_tokens, 1024);
+    assert.ok(warnings.some((w) => /max_tokens 1024 leaves no room for thinking .* reasoning_effort 'minimal' ignored/.test(w)));
+  });
+
+  it('drops temperature (unless 1), top_p (below 0.95) and top_k while thinking', () => {
+    const { body, warnings } = toAnthropic({
+      reasoning_effort: 'low',
+      temperature: 0.5,
+      top_p: 0.9,
+      top_k: 40,
+    });
+    assert.equal(body.temperature, undefined);
+    assert.equal(body.top_p, undefined);
+    assert.equal(body.top_k, undefined);
+    for (const w of ["'temperature' 0.5", "'top_p' 0.9", "'top_k' 40"]) {
+      assert.ok(warnings.includes(`${w} unsupported while thinking is enabled -- dropped`), w);
+    }
+  });
+
+  it('keeps temperature 1 and top_p >= 0.95 while thinking', () => {
+    const { body, warnings } = toAnthropic({ reasoning_effort: 'low', temperature: 1, top_p: 0.95 });
+    assert.equal(body.temperature, 1);
+    assert.equal(body.top_p, 0.95);
+    assert.ok(!warnings.some((w) => /dropped/.test(w)));
+  });
+
+  it('keeps sampling controls when thinking was requested but could not fit', () => {
+    const { body } = toAnthropic({ reasoning_effort: 'low', max_tokens: 500, temperature: 0.2, top_k: 5 });
+    assert.equal(body.thinking, undefined);
+    assert.equal(body.temperature, 0.2);
+    assert.equal(body.top_k, 5);
+  });
+
+  for (const model of ['claude-haiku-4-5-20251001', 'claude-sonnet-4-5', 'claude-sonnet-4-6', 'claude-opus-4-1', 'claude-3-7-sonnet-latest', 'claude-opus-6', 'my-deployment']) {
+    it(`treats ${model} as a budget-thinking model`, () => {
+      const { body, warnings } = toAnthropic({ model, reasoning_effort: 'low', temperature: 1, top_k: 5 });
+      assert.deepEqual(body.thinking, { type: 'enabled', budget_tokens: 4096 });
+      assert.equal(body.output_config, undefined);
+      assert.equal(body.temperature, 1);
+      assert.ok(warnings.includes("'top_k' 5 unsupported while thinking is enabled -- dropped"));
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Config — adaptive-thinking families (Opus 4.7+, the 5.x line)
+// ---------------------------------------------------------------------------
+
+describe('anthropicChatConfig — adaptive-thinking families', () => {
+  const modern = [
+    'claude-opus-4-7',
+    'claude-opus-4-8',
+    'claude-opus-5',
+    'claude-opus-5-5',
+    'claude-sonnet-5',
+    'claude-sonnet-5-5',
+    'claude-haiku-5-5',
+    'claude-fable-5',
+    'claude-fable-5-1',
+    'claude-mythos-5',
+    'claude-mythos-5-1',
+  ];
+
+  for (const model of modern) {
+    it(`${model}: drops temperature, top_p and top_k with warnings`, () => {
+      const { body, warnings } = toAnthropic({ model, temperature: 0.5, top_p: 0.9, top_k: 40 });
+      assert.equal(body.temperature, undefined);
+      assert.equal(body.top_p, undefined);
+      assert.equal(body.top_k, undefined);
+      for (const field of ['temperature', 'top_p', 'top_k']) {
+        assert.ok(warnings.includes(`'${field}' unsupported on ${model} -- dropped`), field);
+      }
+    });
+
+    it(`${model}: maps reasoning_effort to adaptive thinking + output_config.effort`, () => {
+      const { body, warnings } = toAnthropic({ model, reasoning_effort: 'high' });
+      assert.deepEqual(body.thinking, { type: 'adaptive' });
+      assert.deepEqual(body.output_config, { effort: 'high' });
+      assert.ok(!warnings.some((w) => /unsupported/.test(w)));
+    });
+  }
+
+  for (const effort of ['low', 'medium', 'high', 'xhigh'] as const) {
+    it(`sends reasoning_effort '${effort}' as the same effort level`, () => {
+      const { body } = toAnthropic({ model: 'claude-opus-4-7', reasoning_effort: effort });
+      assert.deepEqual(body.output_config, { effort });
+    });
+  }
+
+  it("sends 'minimal' as effort 'low', with a warning", () => {
+    const { body, warnings } = toAnthropic({ model: 'claude-sonnet-5', reasoning_effort: 'minimal' });
+    assert.deepEqual(body.thinking, { type: 'adaptive' });
+    assert.deepEqual(body.output_config, { effort: 'low' });
+    assert.ok(warnings.includes("reasoning_effort 'minimal' unsupported on claude-sonnet-5 -- sent as effort 'low'"));
+  });
+
+  it("sends an unrecognised reasoning_effort as effort 'medium', with a warning", () => {
+    const { body, warnings } = toAnthropic({ model: 'claude-sonnet-5', reasoning_effort: 'bogus' as never });
+    assert.deepEqual(body.output_config, { effort: 'medium' });
+    assert.ok(warnings.some((w) => /reasoning_effort 'bogus' unsupported .* sent as effort 'medium'/.test(w)));
+  });
+
+  for (const model of ['claude-opus-4-7', 'claude-opus-4-8']) {
+    it(`${model}: 'none' sends nothing (thinking is off unless requested)`, () => {
+      const { body, warnings } = toAnthropic({ model, reasoning_effort: 'none' });
+      assert.equal(body.thinking, undefined);
+      assert.equal(body.output_config, undefined);
+      assert.ok(!warnings.some((w) => /reasoning_effort|thinking/.test(w)));
+    });
+  }
+
+  for (const model of ['claude-opus-5', 'claude-sonnet-5', 'claude-haiku-5-5']) {
+    it(`${model}: 'none' disables thinking (it is on by default)`, () => {
+      const { body, warnings } = toAnthropic({ model, reasoning_effort: 'none' });
+      assert.deepEqual(body.thinking, { type: 'disabled' });
+      assert.equal(body.output_config, undefined);
+      assert.ok(!warnings.some((w) => /reasoning_effort|thinking/.test(w)));
+    });
+  }
+
+  for (const model of ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-fable-5', 'claude-fable-5-1', 'claude-mythos-5', 'claude-mythos-5-1']) {
+    it(`${model}: 'none' becomes effort 'low' (thinking cannot be turned off)`, () => {
+      const { body, warnings } = toAnthropic({ model, reasoning_effort: 'none' });
+      assert.equal(body.thinking, undefined);
+      assert.deepEqual(body.output_config, { effort: 'low' });
+      assert.ok(warnings.includes(`thinking cannot be turned off on ${model} -- reasoning_effort 'none' sent as effort 'low'`));
+    });
+  }
+
+  it('leaves thinking at the model default when reasoning_effort is absent', () => {
+    const { body } = toAnthropic({ model: 'claude-opus-5-5' });
+    assert.equal(body.thinking, undefined);
+    assert.equal(body.output_config, undefined);
+    assert.equal(body.max_tokens, 4096);
+  });
+
+  it('never clamps or drops adaptive thinking for a small explicit max_tokens', () => {
+    const { body, warnings } = toAnthropic({ model: 'claude-opus-4-7', reasoning_effort: 'high', max_tokens: 500 });
+    assert.deepEqual(body.thinking, { type: 'adaptive' });
+    assert.equal(body.max_tokens, 500);
+    assert.ok(!warnings.some((w) => /clamped|no room/.test(w)));
+  });
+
+  it('defaults max_tokens to 4096 plus the effort level’s nominal budget', () => {
+    const { body } = toAnthropic({ model: 'claude-haiku-5-5', reasoning_effort: 'medium' });
+    assert.equal(body.max_tokens, 4096 + 16384);
+  });
+
+  for (const model of [
+    'claude-opus-4-7-20260415',
+    'claude-sonnet-5-20260601',
+    'Claude-Opus-4-7',
+    'prod-claude-opus-4-7',
+    'claude-opus-4.7',
+    'claude-opus-5-5@20260801',
+  ]) {
+    it(`recognises the family in '${model}'`, () => {
+      const { body } = toAnthropic({ model, temperature: 0.5 });
+      assert.equal(body.temperature, undefined);
+    });
+  }
+
+  it("does not confuse a date suffix with a minor version ('claude-opus-4-20250514' is Opus 4)", () => {
+    const { body } = toAnthropic({ model: 'claude-opus-4-20250514', temperature: 0.5 });
+    assert.equal(body.temperature, 0.5);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Request translation: canonical → Anthropic
 // ---------------------------------------------------------------------------
 
@@ -526,8 +738,31 @@ describe('toAnthropicRequest — tools / tool_choice / response_format', () => {
       ...base,
       response_format: { type: 'json_schema', json_schema: { name: 'X', schema } },
     });
-    assert.equal(request.output_config!.format.type, 'json_schema');
-    assert.deepEqual(request.output_config!.format.schema, schema);
+    assert.equal(request.output_config!.format!.type, 'json_schema');
+    assert.deepEqual(request.output_config!.format!.schema, schema);
+  });
+
+  it('merges response_format into output_config alongside the effort set for reasoning_effort', () => {
+    const schema = { type: 'object', properties: { a: { type: 'number' } } };
+    const { request } = toAnthropicRequest({
+      ...base,
+      model: 'claude-opus-4-7',
+      reasoning_effort: 'low',
+      response_format: { type: 'json_schema', json_schema: { name: 'X', schema } },
+    });
+    assert.deepEqual(request.thinking, { type: 'adaptive' });
+    assert.deepEqual(request.output_config, { effort: 'low', format: { type: 'json_schema', schema } });
+
+    const { request: jsonObject } = toAnthropicRequest({
+      ...base,
+      model: 'claude-opus-5-5',
+      reasoning_effort: 'none',
+      response_format: { type: 'json_object' },
+    });
+    assert.deepEqual(jsonObject.output_config, {
+      effort: 'low',
+      format: { type: 'json_schema', schema: { type: 'object' } },
+    });
   });
 
   it('does not set output_config for response_format=text', () => {

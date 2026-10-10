@@ -13,6 +13,7 @@ import {
   modelMatches,
   ANTHROPIC_DEFAULT_MAX_TOKENS,
   ANTHROPIC_THINKING_BUDGET,
+  ANTHROPIC_EFFORT,
   getProviderConfig,
   openaiChatConfig,
   googleChatConfig,
@@ -129,6 +130,7 @@ describe('public surface re-exports', () => {
     assert.ok(UpstreamError.prototype instanceof Error);
     assert.equal(ANTHROPIC_DEFAULT_MAX_TOKENS, 4096);
     assert.equal(typeof ANTHROPIC_THINKING_BUDGET.medium, 'number');
+    assert.equal(ANTHROPIC_EFFORT.xhigh, 'xhigh');
   });
 
   it('exposes provider configs and the resolver', () => {
