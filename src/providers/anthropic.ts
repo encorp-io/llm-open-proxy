@@ -6,6 +6,10 @@
  * places: system messages live on a top-level `system` field, tool calls
  * use `tool_use` / `tool_result` content blocks, and response_format becomes
  * `output_config`. Everything else flows through the declarative engine.
+ *
+ * Current Claude families (Opus 4.7+, the 5.x line) reject sampling controls
+ * and budget thinking; a per-family table drops the former and maps
+ * `reasoning_effort` to adaptive thinking plus `output_config.effort` there.
  */
 
 import type {
@@ -16,11 +20,12 @@ import type {
   ContentPart,
   TokenUsage,
 } from '../types.js';
-import type { ProviderParamConfig } from '../engine.js';
+import type { MapAction, ProviderParamConfig, TransformCtx } from '../engine.js';
 import { transformChatRequest } from '../engine.js';
 import {
   resolveMaxCompletionTokens,
   ANTHROPIC_DEFAULT_MAX_TOKENS,
+  ANTHROPIC_EFFORT,
   ANTHROPIC_THINKING_BUDGET,
   clampTemperature,
   stripReasoningContent,
@@ -35,28 +40,188 @@ const DEFAULT_TIMEOUT_MS = 600_000;
 const AUTH_HEADER_NAMES = new Set(['authorization', 'api-key', 'x-api-key']);
 
 // ---------------------------------------------------------------------------
+// Model-family rules (shared with Claude on Microsoft Foundry)
+// ---------------------------------------------------------------------------
+
+interface AdaptiveThinkingProfile {
+  /**
+   * How `reasoning_effort: 'none'` is honoured. 'omit': thinking is off unless
+   * requested, so nothing is sent. 'disable': thinking is on by default, so
+   * `{type: 'disabled'}` is sent. 'low': thinking cannot be turned off, so the
+   * lowest effort is sent instead.
+   */
+  none: 'omit' | 'disable' | 'low';
+}
+
+/**
+ * Claude families that reject `temperature`, `top_p`, `top_k` and budget
+ * thinking (`{type: 'enabled', budget_tokens}`), keyed by family and version.
+ * They take adaptive thinking plus `output_config.effort` (low to max)
+ * instead. The sampling and thinking rejections, and acceptance of adaptive
+ * thinking, were verified live against Anthropic's API on 2026-10-10 for
+ * every row except opus-4-8, fable-* and mythos-*, whose rows follow
+ * Anthropic's model documentation. The `none` handling follows the
+ * documentation everywhere.
+ *
+ * Families not listed (haiku-4-5, sonnet-4-5, opus-4-6, sonnet-4-6, older
+ * models, and anything unknown) keep sampling controls and budget thinking.
+ */
+const ADAPTIVE_THINKING_PROFILES: ReadonlyMap<string, AdaptiveThinkingProfile> = new Map([
+  ['opus-4-7', { none: 'omit' }],
+  ['opus-4-8', { none: 'omit' }],
+  ['opus-5', { none: 'disable' }],
+  ['opus-5-5', { none: 'low' }],
+  ['sonnet-5', { none: 'disable' }],
+  ['sonnet-5-5', { none: 'low' }],
+  ['haiku-5-5', { none: 'disable' }],
+  ['fable-5', { none: 'low' }],
+  ['fable-5-1', { none: 'low' }],
+  ['mythos-5', { none: 'low' }],
+  ['mythos-5-1', { none: 'low' }],
+]);
+
+/**
+ * `claude-<family>-<major>[-<minor>]` anywhere in the id, so date suffixes
+ * (`claude-haiku-4-5-20251001`) and Foundry deployment names that embed the
+ * model id (`prod-claude-opus-4-7`) resolve. A minor version is one or two
+ * digits; eight digits are a date.
+ */
+const CLAUDE_FAMILY_PATTERN = /claude-(opus|sonnet|haiku|fable|mythos)-(\d+)(?:[-.](\d{1,2})(?!\d))?/;
+
+/**
+ * The adaptive-thinking profile for `model`, if its family has one.
+ * Best-effort on Foundry, where `model` is a deployment name.
+ */
+function adaptiveThinkingProfile(model: string): AdaptiveThinkingProfile | undefined {
+  const match = CLAUDE_FAMILY_PATTERN.exec(model.toLowerCase());
+  if (!match) return undefined;
+  const [, family, major, minor] = match;
+  return ADAPTIVE_THINKING_PROFILES.get(minor ? `${family}-${major}-${minor}` : `${family}-${major}`);
+}
+
+type CanonicalEffort = Exclude<NonNullable<CanonicalChatRequest['reasoning_effort']>, 'none'>;
+
+/** budget_tokens must be at least this, and below max_tokens. */
+const MIN_THINKING_BUDGET = 1024;
+
+/**
+ * The thinking budget the requested `reasoning_effort` stands for, whatever
+ * the model; `undefined` when no thinking is requested.
+ */
+function nominalThinkingBudget(req: CanonicalChatRequest): number | undefined {
+  const effort = req.reasoning_effort;
+  if (effort === undefined || effort === 'none') return undefined;
+  return ANTHROPIC_THINKING_BUDGET[effort as CanonicalEffort] ?? ANTHROPIC_THINKING_BUDGET.medium;
+}
+
+/**
+ * The `budget_tokens` to send when `req.model` uses budget thinking: the
+ * nominal budget, clamped below an explicit max_tokens (thinking counts
+ * toward it, as reasoning counts toward OpenAI's max_completion_tokens).
+ * `undefined` when thinking stays off — not requested, or the max_tokens cap
+ * has no room for the minimum budget.
+ */
+function thinkingBudget(req: CanonicalChatRequest): number | undefined {
+  const nominal = nominalThinkingBudget(req);
+  if (nominal === undefined) return undefined;
+  const maxTokens = resolveMaxCompletionTokens(req);
+  if (maxTokens === undefined || nominal < maxTokens) return nominal;
+  return maxTokens - 1 >= MIN_THINKING_BUDGET ? maxTokens - 1 : undefined;
+}
+
+/**
+ * `temperature`, `top_p` and `top_k`. Adaptive-thinking families reject all
+ * three. Budget thinking on older models takes only `temperature` 1 and
+ * `top_p` ≥ 0.95, and no `top_k`. Anything else is dropped with a warning;
+ * `keep` forwards accepted values.
+ */
+function samplingControl(
+  field: 'temperature' | 'top_p' | 'top_k',
+  keep: (body: Record<string, unknown>, value: unknown, ctx: TransformCtx) => void,
+): MapAction {
+  return {
+    kind: 'custom',
+    apply(body, value, ctx) {
+      const req = ctx.fullRequest;
+      if (adaptiveThinkingProfile(req.model)) {
+        ctx.warn(`'${field}' unsupported on ${req.model} -- dropped`);
+        return;
+      }
+      if (thinkingBudget(req) !== undefined) {
+        const accepted =
+          (field === 'temperature' && value === 1) || (field === 'top_p' && Number(value) >= 0.95);
+        if (!accepted) {
+          ctx.warn(`'${field}' ${String(value)} unsupported while thinking is enabled -- dropped`);
+          return;
+        }
+      }
+      keep(body, value, ctx);
+    },
+  };
+}
+
+/**
+ * `reasoning_effort` on an adaptive-thinking family: adaptive thinking plus
+ * `output_config.effort` ('minimal' sent as 'low'), and 'none' per the
+ * family's profile. `toAnthropicRequest` merges `output_config.format` in.
+ */
+function applyAdaptiveEffort(
+  body: Record<string, unknown>,
+  value: unknown,
+  profile: AdaptiveThinkingProfile,
+  ctx: TransformCtx,
+): void {
+  const { model } = ctx.fullRequest;
+  if (value === 'none') {
+    if (profile.none === 'disable') {
+      body.thinking = { type: 'disabled' };
+    } else if (profile.none === 'low') {
+      ctx.warn(`thinking cannot be turned off on ${model} -- reasoning_effort 'none' sent as effort 'low'`);
+      body.output_config = { effort: 'low' };
+    }
+    return;
+  }
+  const effort = ANTHROPIC_EFFORT[value as CanonicalEffort] ?? 'medium';
+  if (effort !== value) {
+    ctx.warn(`reasoning_effort '${String(value)}' unsupported on ${model} -- sent as effort '${effort}'`);
+  }
+  body.thinking = { type: 'adaptive' };
+  body.output_config = { effort };
+}
+
+// ---------------------------------------------------------------------------
 // Provider config — declarative scalar-field mapping
 // ---------------------------------------------------------------------------
 
 export const anthropicChatConfig: ProviderParamConfig = {
-  temperature: {
-    kind: 'custom',
-    apply(body, value, ctx) {
-      body.temperature = clampTemperature(Number(value), 1.0, ctx.warn);
-    },
-  },
-  top_p: { kind: 'passthrough' },
-  top_k: { kind: 'passthrough' },
+  temperature: samplingControl('temperature', (body, value, ctx) => {
+    body.temperature = clampTemperature(Number(value), 1.0, ctx.warn);
+  }),
+  top_p: samplingControl('top_p', (body, value) => {
+    body.top_p = value;
+  }),
+  top_k: samplingControl('top_k', (body, value) => {
+    body.top_k = value;
+  }),
   n: { kind: 'drop', reason: 'Anthropic only supports n=1' },
   max_completion_tokens: { kind: 'rename', to: 'max_tokens' },
   max_tokens: {
     kind: 'always',
     apply(body, _value, ctx) {
       const resolved = resolveMaxCompletionTokens(ctx.fullRequest);
-      body.max_tokens = resolved ?? ANTHROPIC_DEFAULT_MAX_TOKENS;
-      if (resolved === undefined) {
-        ctx.warn(`max_tokens missing -- defaulted to ${ANTHROPIC_DEFAULT_MAX_TOKENS} (Anthropic requires it)`);
+      if (resolved !== undefined) {
+        body.max_tokens = resolved;
+        return;
       }
+      // Thinking counts toward max_tokens, so leave the requested effort's
+      // budget on top of the default answer room.
+      const budget = nominalThinkingBudget(ctx.fullRequest);
+      body.max_tokens = ANTHROPIC_DEFAULT_MAX_TOKENS + (budget ?? 0);
+      ctx.warn(
+        budget === undefined
+          ? `max_tokens missing -- defaulted to ${ANTHROPIC_DEFAULT_MAX_TOKENS} (Anthropic requires it)`
+          : `max_tokens missing -- defaulted to ${body.max_tokens} (Anthropic requires it; ${ANTHROPIC_DEFAULT_MAX_TOKENS} plus ${budget} for reasoning_effort '${String(ctx.fullRequest.reasoning_effort)}')`,
+      );
     },
   },
   stop: { kind: 'rename', to: 'stop_sequences' },
@@ -80,11 +245,26 @@ export const anthropicChatConfig: ProviderParamConfig = {
   parallel_tool_calls: { kind: 'drop', reason: 'Anthropic uses disable_parallel_tool_use on tool_choice' },
   reasoning_effort: {
     kind: 'custom',
-    apply(body, value) {
-      // 'none' means no thinking — which is Anthropic's default.
+    apply(body, value, ctx) {
+      const req = ctx.fullRequest;
+      const profile = adaptiveThinkingProfile(req.model);
+      if (profile) {
+        applyAdaptiveEffort(body, value, profile, ctx);
+        return;
+      }
+      // 'none' means no thinking — which is the default on these models.
       if (value === 'none') return;
-      const effort = value as keyof typeof ANTHROPIC_THINKING_BUDGET;
-      const budget = ANTHROPIC_THINKING_BUDGET[effort] ?? ANTHROPIC_THINKING_BUDGET.medium;
+      const budget = thinkingBudget(req);
+      const nominal = nominalThinkingBudget(req);
+      if (budget === undefined) {
+        ctx.warn(
+          `max_tokens ${resolveMaxCompletionTokens(req)} leaves no room for thinking (budget_tokens must be at least ${MIN_THINKING_BUDGET} and below max_tokens) -- reasoning_effort '${String(value)}' ignored`,
+        );
+        return;
+      }
+      if (budget !== nominal) {
+        ctx.warn(`thinking budget ${nominal} clamped to ${budget} to fit under max_tokens ${resolveMaxCompletionTokens(req)}`);
+      }
       body.thinking = { type: 'enabled', budget_tokens: budget };
     },
   },
@@ -116,11 +296,16 @@ export interface AnthropicRequest {
     input_schema: Record<string, unknown>;
   }>;
   tool_choice?: { type: 'auto' | 'any' | 'none' | 'tool'; name?: string };
+  thinking?:
+    | { type: 'enabled'; budget_tokens: number }
+    | { type: 'adaptive' }
+    | { type: 'disabled' };
   output_config?: {
-    format: {
+    format?: {
       type: 'json_schema';
       schema: Record<string, unknown>;
     };
+    effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   };
   [key: string]: unknown;
 }
@@ -251,14 +436,17 @@ export function toAnthropicRequest(canonical: CanonicalChatRequest): RequestTran
     }
   }
 
+  // Merged, not assigned: the engine may already have set output_config.effort.
   const responseFormat = canonical.response_format;
   if (responseFormat) {
     if (responseFormat.type === 'json_object') {
       anthropicRequest.output_config = {
+        ...anthropicRequest.output_config,
         format: { type: 'json_schema', schema: { type: 'object' } },
       };
     } else if (responseFormat.type === 'json_schema' && responseFormat.json_schema?.schema) {
       anthropicRequest.output_config = {
+        ...anthropicRequest.output_config,
         format: { type: 'json_schema', schema: responseFormat.json_schema.schema },
       };
     }

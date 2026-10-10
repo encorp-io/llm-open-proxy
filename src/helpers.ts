@@ -27,6 +27,23 @@ export const ANTHROPIC_THINKING_BUDGET: Record<
   xhigh: 32768,
 };
 
+/**
+ * Anthropic reasoning_effort → `output_config.effort` mapping, used on the
+ * Claude families that replace budget thinking with adaptive thinking.
+ * `minimal` has no counterpart and shares `low`; `none` has no entry (each
+ * family turns thinking off its own way).
+ */
+export const ANTHROPIC_EFFORT: Record<
+  Exclude<NonNullable<CanonicalChatRequest['reasoning_effort']>, 'none'>,
+  'low' | 'medium' | 'high' | 'xhigh'
+> = {
+  minimal: 'low',
+  low: 'low',
+  medium: 'medium',
+  high: 'high',
+  xhigh: 'xhigh',
+};
+
 /** Strip `reasoning_content` from assistant messages (used for non-DeepSeek providers). */
 export function stripReasoningContent(messages: ChatMessage[]): ChatMessage[] {
   return messages.map((m) => {

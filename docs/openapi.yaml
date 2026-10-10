@@ -301,7 +301,7 @@ components:
           minimum: 0
           maximum: 2
           x-provider-support:
-            anthropic: clamped to ≤ 1
+            anthropic: clamped to ≤ 1; dropped on Opus 4.7+ / 5.x models, and while budget thinking is on unless it is 1
             openai: dropped on reasoning models unless the request runs with reasoning_effort none
             foundry: dropped on reasoning deployments unless the request runs with reasoning_effort none
         top_p:
@@ -309,12 +309,13 @@ components:
           minimum: 0
           maximum: 1
           x-provider-support:
+            anthropic: dropped on Opus 4.7+ / 5.x models, and below 0.95 while budget thinking is on
             openai: dropped on reasoning models unless the request runs with reasoning_effort none
             foundry: dropped on reasoning deployments unless the request runs with reasoning_effort none
         top_k:
           type: integer
           x-provider-support:
-            anthropic: ✓
+            anthropic: dropped on Opus 4.7+ / 5.x models and while budget thinking is on
             google: ✓
             openai: dropped
             deepseek: dropped
@@ -333,7 +334,9 @@ components:
           minimum: 1
           description: >-
             Preferred. Renamed to `max_tokens` for Anthropic / DeepSeek / Perplexity
-            and for Foundry's Model Inference API.
+            and for Foundry's Model Inference API. Anthropic requires it: when omitted
+            it defaults to 4096 plus the thinking budget of the requested
+            `reasoning_effort`.
         max_tokens:
           type: integer
           minimum: 1
@@ -399,7 +402,7 @@ components:
         response_format:
           $ref: '#/components/schemas/ResponseFormat'
           x-provider-support:
-            anthropic: translated to `output_config`
+            anthropic: translated to `output_config.format`, merged with `output_config.effort`
         tools:
           type: array
           items: { $ref: '#/components/schemas/ChatTool' }
@@ -421,7 +424,11 @@ components:
           type: string
           enum: [none, minimal, low, medium, high, xhigh]
           x-provider-support:
-            anthropic: mapped to `thinking.budget_tokens`; `none` leaves thinking off
+            anthropic: >-
+              Opus 4.7+ / 5.x models get adaptive thinking plus `output_config.effort` (`minimal` sent as
+              `low`); `none` sends nothing on Opus 4.7 / 4.8, disables thinking on Opus 5 / Sonnet 5 / Haiku 5.5,
+              and becomes effort `low` where thinking can't be turned off (Opus 5.5, Sonnet 5.5, Fable, Mythos).
+              Older models get `thinking.budget_tokens`, clamped below `max_tokens`; `none` leaves thinking off.
             deepseek: mapped to `thinking.reasoning_effort`; `none` disables thinking
             openai: a level the model lacks is sent as its nearest one; `none` is sent with tools on gpt-5.4+
             foundry: a level the model lacks is sent as its nearest one; `none` is sent with tools on gpt-5.4+

@@ -57,6 +57,7 @@ export {
   modelMatches,
   ANTHROPIC_DEFAULT_MAX_TOKENS,
   ANTHROPIC_THINKING_BUDGET,
+  ANTHROPIC_EFFORT,
 } from './helpers.js';
 
 // Errors + retry

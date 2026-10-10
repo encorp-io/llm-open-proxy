@@ -35,13 +35,14 @@ import {
   skipIfMissingKey,
   call,
   DEFAULT_OPENAI_MODEL,
+  DEFAULT_ANTHROPIC_MODEL,
 } from './helpers.js';
 
 const FAKE_WEATHER_RESULT = 'It is currently sunny and 22 degrees Celsius in Sofia.';
 
 test('anthropic — full tool round-trip: request → tool_use → tool_result → final answer', skipIfMissingKey('ANTHROPIC_API_KEY'), async () => {
   const apiKey = process.env.ANTHROPIC_API_KEY!;
-  const model = process.env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5';
+  const model = process.env.ANTHROPIC_MODEL ?? DEFAULT_ANTHROPIC_MODEL;
 
   // Turn 1: ask about weather. Model should emit a tool_use.
   const turn1 = await call(() =>
