@@ -93,7 +93,12 @@ export interface CanonicalChatRequest {
   tools?: ChatTool[];
   tool_choice?: ChatToolChoice;
   parallel_tool_calls?: boolean;
-  reasoning_effort?: 'minimal' | 'low' | 'medium' | 'high';
+  /**
+   * How much the model should reason. `none` turns reasoning off (and is what
+   * lets gpt-5.1+ / gpt-6 accept sampling controls and function tools);
+   * `xhigh` is above `high`. Adapters raise or map levels a model lacks.
+   */
+  reasoning_effort?: 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   stream?: boolean;
   stream_options?: { include_usage?: boolean };
   /**

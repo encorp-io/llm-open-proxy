@@ -172,5 +172,7 @@ describe('module constants', () => {
     assert.equal(ANTHROPIC_THINKING_BUDGET.low, 4096);
     assert.equal(ANTHROPIC_THINKING_BUDGET.medium, 16384);
     assert.equal(ANTHROPIC_THINKING_BUDGET.high, 32768);
+    assert.equal(ANTHROPIC_THINKING_BUDGET.xhigh, 32768);
+    assert.ok(!('none' in ANTHROPIC_THINKING_BUDGET), "'none' means no thinking, so it has no budget");
   });
 });

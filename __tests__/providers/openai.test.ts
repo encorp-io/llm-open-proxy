@@ -27,91 +27,180 @@ const asBody = (b: object): Record<string, unknown> => b as Record<string, unkno
 // Config tests
 // ---------------------------------------------------------------------------
 
-describe('openaiChatConfig — sampling-locked models', () => {
-  for (const model of ['gpt-5', 'GPT-5-turbo', 'gpt-6-sol', 'o1', 'o3-mini', 'o4-pro']) {
-    it(`drops temperature with warning on ${model}`, () => {
-      const { body, warnings } = transformChatRequest(
-        { ...base, model, temperature: 0.5 },
-        openaiChatConfig,
-        'openai',
-      );
-      assert.equal(body.temperature, undefined);
-      assert.ok(warnings.some((w) => w.includes('temperature unsupported')));
-    });
-
-    it(`drops top_p with warning on ${model}`, () => {
-      const { body, warnings } = transformChatRequest(
-        { ...base, model, top_p: 0.9 },
-        openaiChatConfig,
-        'openai',
-      );
-      assert.equal(body.top_p, undefined);
-      assert.ok(warnings.some((w) => w.includes('top_p unsupported')));
-    });
-  }
-
-  it('keeps temperature/top_p on regular models', () => {
-    const { body, warnings } = transformChatRequest(
-      { ...base, temperature: 0.7, top_p: 0.95 },
-      openaiChatConfig,
-      'openai',
-    );
-    assert.equal(body.temperature, 0.7);
-    assert.equal(body.top_p, 0.95);
-    assert.deepEqual(warnings, []);
-  });
-});
-
-describe('openaiChatConfig — reasoning-model rules (verified live on gpt-6)', () => {
-  const rejected = {
-    stop: ['END'],
+// Every expectation in this suite mirrors a live observation against OpenAI's
+// Chat Completions API on 2026-10-10 (see REASONING_PROFILES in openai.ts).
+describe('openaiChatConfig — reasoning-model matrix (verified live)', () => {
+  const SAMPLING = {
+    temperature: 0.5,
+    top_p: 0.9,
     frequency_penalty: 0.1,
     presence_penalty: 0.2,
-    logit_bias: { '1': 1 },
     logprobs: true,
     top_logprobs: 2,
   };
   const weather = { type: 'function' as const, function: { name: 'get_weather' } };
+  const convert = (req: Partial<CanonicalChatRequest>) =>
+    transformChatRequest({ ...base, ...req }, openaiChatConfig, 'openai');
 
-  for (const model of ['gpt-6-luna', 'o3-mini', 'gpt-5']) {
-    it(`drops stop/penalties/logit_bias/logprobs on ${model}, keeping seed`, () => {
-      const { body, warnings } = transformChatRequest(
-        { ...base, model, ...rejected, seed: 3 },
-        openaiChatConfig,
-        'openai',
+  function assertSampling(req: Partial<CanonicalChatRequest>, kept: boolean, label: string) {
+    const { body, warnings } = convert({ ...req, ...SAMPLING });
+    for (const [field, value] of Object.entries(SAMPLING)) {
+      assert.equal(body[field], kept ? value : undefined, `${label}: ${field}`);
+      assert.equal(
+        warnings.some((w) => w.includes(`'${field}' unsupported on reasoning model ${req.model}`)),
+        !kept,
+        `${label}: warning for ${field}`,
       );
-      for (const field of Object.keys(rejected)) {
-        assert.equal(body[field], undefined, `${field} should be dropped`);
-        assert.ok(warnings.some((w) => w.includes(`'${field}' unsupported on reasoning model ${model}`)));
-      }
+    }
+  }
+
+  interface Row {
+    model: string;
+    /** When sampling/penalty/logprob controls are accepted. */
+    sampling: 'never' | 'by-default' | 'only-at-none';
+    stop: boolean;
+    /** Lowest reasoning_effort the model accepts. */
+    floor: 'none' | 'minimal' | 'low';
+    /** Function tools: any effort, only with effort none, or not at all. */
+    tools: 'any' | 'no-reasoning' | 'never';
+    /** An omitted reasoning_effort already means none. */
+    defaultNone?: boolean;
+    /** The model has no 'xhigh' level. */
+    noXhigh?: boolean;
+  }
+
+  const ROWS: Row[] = [
+    { model: 'o1', sampling: 'never', stop: true, floor: 'low', tools: 'any' },
+    { model: 'o3-mini', sampling: 'never', stop: true, floor: 'low', tools: 'any' },
+    { model: 'o3', sampling: 'never', stop: false, floor: 'low', tools: 'any' },
+    { model: 'o4-mini', sampling: 'never', stop: false, floor: 'low', tools: 'any' },
+    { model: 'gpt-5', sampling: 'never', stop: false, floor: 'minimal', tools: 'any', noXhigh: true },
+    { model: 'gpt-5-mini', sampling: 'never', stop: false, floor: 'minimal', tools: 'any', noXhigh: true },
+    { model: 'gpt-5.1', sampling: 'by-default', stop: false, floor: 'none', tools: 'any', defaultNone: true, noXhigh: true },
+    { model: 'gpt-5.2', sampling: 'by-default', stop: false, floor: 'none', tools: 'any', defaultNone: true },
+    { model: 'gpt-5.4', sampling: 'by-default', stop: false, floor: 'none', tools: 'no-reasoning', defaultNone: true },
+    { model: 'gpt-5.4-mini', sampling: 'by-default', stop: false, floor: 'none', tools: 'no-reasoning', defaultNone: true },
+    { model: 'gpt-5.5', sampling: 'only-at-none', stop: false, floor: 'none', tools: 'no-reasoning' },
+    { model: 'gpt-5.6-luna', sampling: 'only-at-none', stop: false, floor: 'none', tools: 'no-reasoning' },
+    { model: 'gpt-6-luna', sampling: 'only-at-none', stop: false, floor: 'none', tools: 'no-reasoning' },
+    { model: 'GPT-6-Sol', sampling: 'only-at-none', stop: false, floor: 'none', tools: 'no-reasoning' },
+    { model: 'gpt-6-astra', sampling: 'never', stop: false, floor: 'low', tools: 'never' },
+    { model: 'gpt-6.1-sol', sampling: 'never', stop: false, floor: 'low', tools: 'never' },
+  ];
+
+  for (const row of ROWS) {
+    const { model } = row;
+
+    it(`${model}: sampling, penalty and logprob controls`, () => {
+      assertSampling({ model }, row.sampling === 'by-default', 'default effort');
+      assertSampling({ model, reasoning_effort: 'none' }, row.sampling !== 'never', "effort 'none'");
+      assertSampling({ model, reasoning_effort: 'low' }, false, "effort 'low'");
+    });
+
+    it(`${model}: stop is ${row.stop ? 'kept' : 'dropped'}, logit_bias dropped`, () => {
+      const { body, warnings } = convert({ model, stop: ['END'], logit_bias: { '1': 1 }, seed: 3 });
+      assert.deepEqual(body.stop, row.stop ? ['END'] : undefined);
+      assert.equal(body.logit_bias, undefined);
       assert.equal(body.seed, 3);
+      assert.equal(warnings.some((w) => w.includes(`'stop' unsupported on reasoning model ${model}`)), !row.stop);
+      assert.ok(warnings.some((w) => w.includes(`'logit_bias' unsupported on reasoning model ${model}`)));
+    });
+
+    it(`${model}: unsupported reasoning_effort levels map to the nearest supported one`, () => {
+      // Live: no model takes both 'none' and 'minimal'; whichever it lacks goes to its lowest level.
+      const expectations = {
+        none: row.floor,
+        minimal: row.floor,
+        low: 'low',
+        medium: 'medium',
+        high: 'high',
+        xhigh: row.noXhigh ? 'high' : 'xhigh',
+      } as const;
+      for (const [requested, expected] of Object.entries(expectations)) {
+        const { body, warnings } = convert({ model, reasoning_effort: requested as keyof typeof expectations });
+        assert.equal(body.reasoning_effort, expected, `requested ${requested}`);
+        assert.equal(
+          warnings.some((w) => w.includes(`reasoning_effort '${requested}' unsupported on ${model} -- sent as '${expected}'`)),
+          expected !== requested,
+          `warning for ${requested}`,
+        );
+      }
+      const unset = convert({ model });
+      assert.equal(unset.body.reasoning_effort, undefined);
+      assert.deepEqual(unset.warnings, []);
+    });
+
+    it(`${model}: function tools (${row.tools})`, () => {
+      const forced = (w: string) => w.includes(`reasoning_effort forced to 'none' for ${model}`);
+      const responsesOnly = (w: string) => w.includes(`function tools are not supported for ${model} on chat completions`);
+
+      const withEffort = convert({ model, tools: [weather], reasoning_effort: 'high' });
+      const withoutEffort = convert({ model, tools: [weather] });
+      const withNone = convert({ model, tools: [weather], reasoning_effort: 'none' });
+      assert.ok(Array.isArray(withEffort.body.tools), 'tools are always forwarded');
+
+      if (row.tools === 'no-reasoning') {
+        assert.equal(withEffort.body.reasoning_effort, 'none');
+        assert.ok(withEffort.warnings.some(forced));
+        // Models that reason by default need 'none' spelled out; the others are already there.
+        assert.equal(withoutEffort.body.reasoning_effort, row.defaultNone ? undefined : 'none');
+        assert.equal(withoutEffort.warnings.some(forced), !row.defaultNone);
+        assert.equal(withNone.body.reasoning_effort, 'none');
+        assert.deepEqual(withNone.warnings, []);
+        // Running without reasoning, so sampling controls are accepted alongside tools.
+        assertSampling({ model, tools: [weather], reasoning_effort: 'high' }, true, 'tools');
+      } else {
+        assert.equal(withEffort.body.reasoning_effort, 'high');
+        assert.equal(withoutEffort.body.reasoning_effort, undefined);
+        assert.ok(!withEffort.warnings.some(forced));
+        assert.equal(withEffort.warnings.some(responsesOnly), row.tools === 'never');
+        assert.equal(withoutEffort.warnings.some(responsesOnly), row.tools === 'never');
+      }
+      // An empty tools array is not "has tools".
+      assert.equal(convert({ model, tools: [], reasoning_effort: 'high' }).body.reasoning_effort, 'high');
     });
   }
 
-  it("forces reasoning_effort 'none' on gpt-6 when function tools are present", () => {
-    const { body, warnings } = transformChatRequest(
-      { ...base, model: 'gpt-6-luna', tools: [weather], reasoning_effort: 'high' },
-      openaiChatConfig,
-      'openai',
-    );
-    assert.equal(body.reasoning_effort, 'none');
-    assert.ok(Array.isArray(body.tools));
-    assert.ok(warnings.some((w) => w.includes("reasoning_effort forced to 'none' for gpt-6-luna")));
+  for (const model of ['gpt-5.3-chat-latest', 'gpt-6-nova']) {
+    it(`${model} (untested family member): only the shared reasoning rules apply`, () => {
+      assertSampling({ model }, false, 'default effort');
+      assertSampling({ model, reasoning_effort: 'none' }, true, "explicit 'none'");
+      const { body, warnings } = convert({ model, stop: ['END'], logit_bias: { '1': 1 } });
+      assert.equal(body.stop, undefined);
+      assert.equal(body.logit_bias, undefined);
+      assert.equal(warnings.length, 2);
+      // Unknown limits: reasoning_effort is never rewritten, tools never trigger 'none'.
+      for (const effort of ['none', 'minimal', 'high', 'xhigh'] as const) {
+        const out = convert({ model, tools: [weather], reasoning_effort: effort });
+        assert.equal(out.body.reasoning_effort, effort);
+        assert.deepEqual(out.warnings, []);
+      }
+    });
+  }
+
+  it('leaves non-reasoning models alone', () => {
+    for (const model of ['gpt-4o', 'gpt-4.1-mini', 'grok-4', 'kimi-k2']) {
+      const { body, warnings } = convert({
+        model,
+        ...SAMPLING,
+        stop: ['END'],
+        logit_bias: { '1': 1 },
+        tools: [weather],
+        reasoning_effort: 'minimal',
+      });
+      for (const [field, value] of Object.entries(SAMPLING)) assert.equal(body[field], value);
+      assert.deepEqual(body.stop, ['END']);
+      assert.deepEqual(body.logit_bias, { '1': 1 });
+      assert.equal(body.reasoning_effort, 'minimal');
+      assert.deepEqual(warnings, []);
+      assert.equal(convert({ model }).body.reasoning_effort, undefined);
+    }
   });
 
-  it("maps 'minimal' to 'none' on gpt-6 and leaves other models alone", () => {
-    assert.equal(
-      transformChatRequest({ ...base, model: 'gpt-6-sol', reasoning_effort: 'minimal' }, openaiChatConfig, 'openai')
-        .body.reasoning_effort,
-      'none',
-    );
-    const other = transformChatRequest(
-      { ...base, model: 'gpt-5', tools: [weather], reasoning_effort: 'minimal' },
-      openaiChatConfig,
-      'openai',
-    );
-    assert.equal(other.body.reasoning_effort, 'minimal');
-    assert.deepEqual(other.warnings, []);
+  it('passes an unrecognised reasoning_effort value through untouched', () => {
+    const { body, warnings } = convert({ model: 'gpt-6-luna', reasoning_effort: 'max' as never });
+    assert.equal(body.reasoning_effort, 'max');
+    assert.deepEqual(warnings, []);
   });
 });
 

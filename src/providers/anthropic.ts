@@ -81,6 +81,8 @@ export const anthropicChatConfig: ProviderParamConfig = {
   reasoning_effort: {
     kind: 'custom',
     apply(body, value) {
+      // 'none' means no thinking — which is Anthropic's default.
+      if (value === 'none') return;
       const effort = value as keyof typeof ANTHROPIC_THINKING_BUDGET;
       const budget = ANTHROPIC_THINKING_BUDGET[effort] ?? ANTHROPIC_THINKING_BUDGET.medium;
       body.thinking = { type: 'enabled', budget_tokens: budget };

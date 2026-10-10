@@ -121,6 +121,24 @@ describe('deepseekChatConfig', () => {
     assert.deepEqual(body.thinking, { type: 'enabled', reasoning_effort: 'max' });
   });
 
+  it('maps reasoning_effort: none → thinking disabled', () => {
+    const { body } = transformChatRequest(
+      { ...base, reasoning_effort: 'none' },
+      deepseekChatConfig,
+      'deepseek',
+    );
+    assert.deepEqual(body.thinking, { type: 'disabled' });
+  });
+
+  it('maps reasoning_effort: xhigh → max', () => {
+    const { body } = transformChatRequest(
+      { ...base, reasoning_effort: 'xhigh' },
+      deepseekChatConfig,
+      'deepseek',
+    );
+    assert.deepEqual(body.thinking, { type: 'enabled', reasoning_effort: 'max' });
+  });
+
   it('maps reasoning_effort: minimal → max', () => {
     const { body } = transformChatRequest(
       { ...base, reasoning_effort: 'minimal' },

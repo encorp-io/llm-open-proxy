@@ -40,9 +40,10 @@ describe('foundryChatConfig', () => {
     stop: 'END',
   } as const;
 
-  // gpt-6 rejections verified live against Foundry (2026-09): temperature,
-  // top_p, both penalties, logprobs/top_logprobs, logit_bias and stop.
-  for (const model of ['o3-mini', 'o1', 'o4-mini', 'gpt-5', 'GPT-5.1-chat', 'gpt-6-luna', 'gpt-6-sol']) {
+  // The per-family rules are shared with the OpenAI config and tested
+  // exhaustively there; these cases check Foundry is wired to them. The gpt-6
+  // rejections were also verified live against Foundry (2026-09 and 2026-10).
+  for (const model of ['o3', 'o4-mini', 'gpt-5', 'GPT-5.5', 'gpt-6-luna', 'gpt-6-sol', 'gpt-6.1-sol']) {
     it(`drops sampling/logprob/stop controls on reasoning deployment ${model}`, () => {
       const { body, warnings } = transformChatRequest(
         { ...base, model, ...gated },
@@ -58,6 +59,25 @@ describe('foundryChatConfig', () => {
       }
     });
   }
+
+  it('keeps what a reasoning deployment does accept: stop on o1, sampling on gpt-5.1, sampling at effort none on gpt-6', () => {
+    const convert = (req: Partial<CanonicalChatRequest>) =>
+      transformChatRequest({ ...base, ...req }, foundryChatConfig, 'foundry');
+
+    const o1 = convert({ model: 'o1', stop: 'END', temperature: 0.5 });
+    assert.equal(o1.body.stop, 'END');
+    assert.equal(o1.body.temperature, undefined);
+
+    const gpt51 = convert({ model: 'gpt-5.1', temperature: 0.5, presence_penalty: 0.2, logprobs: true, stop: 'END' });
+    assert.equal(gpt51.body.temperature, 0.5);
+    assert.equal(gpt51.body.presence_penalty, 0.2);
+    assert.equal(gpt51.body.logprobs, true);
+    assert.equal(gpt51.body.stop, undefined);
+
+    const gpt6 = convert({ model: 'gpt-6-luna', temperature: 0.5, reasoning_effort: 'none' });
+    assert.equal(gpt6.body.temperature, 0.5);
+    assert.deepEqual(gpt6.warnings, []);
+  });
 
   it('keeps sampling/logprob/stop controls on regular deployments', () => {
     const { body, warnings } = transformChatRequest({ ...base, ...gated }, foundryChatConfig, 'foundry');
@@ -961,10 +981,14 @@ describe('streamFoundryRequest — Azure normalization', () => {
     assert.deepEqual(getPromptFilterResults(), PROMPT_FILTER);
   });
 
-  it('drops choice-less, usage-less chunks that carry no filter results', async () => {
-    installFetchMock(async () => sseResponse([data({ id: '', model: '' }), data(contentChunk('a')), 'data: [DONE]\n\n']));
+  it('forwards a mid-stream error payload instead of swallowing it', async () => {
+    const error = { error: { code: 'server_error', message: 'The server had an error while processing your request.' } };
+    installFetchMock(async () => sseResponse([data(contentChunk('par')), data(error), 'data: [DONE]\n\n']));
     const { stream, getPromptFilterResults } = await streamFoundryRequest({ endpoint: ENDPOINT, apiKey: 'k', body: base });
-    assert.equal(jsonChunks(await readAllText(stream)).length, 1);
+    const events = payloads(await readAllText(stream));
+    assert.equal(events.length, 3);
+    // Forwarded untouched: no id/model backfill, no choices added.
+    assert.deepEqual(JSON.parse(events[1]), error);
     assert.deepEqual(getPromptFilterResults(), []);
   });
 

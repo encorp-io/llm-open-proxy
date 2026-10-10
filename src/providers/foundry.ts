@@ -10,7 +10,9 @@
  *  - `openai-deployments` — the dated Azure OpenAI API:
  *    `{endpoint}/openai/deployments/{deployment}/chat/completions?api-version=…`.
  *  - `model-inference` — the deprecated Azure AI Model Inference API:
- *    `{endpoint}/models/chat/completions?api-version=…`. Legacy only.
+ *    `{endpoint}/models/chat/completions?api-version=…`. Legacy only: its
+ *    announced retirement date (2026-08-26) has passed, so expect it to stop
+ *    answering.
  *  - `anthropic` — Claude on Foundry: `{endpoint}/anthropic/v1/messages`.
  *    Reuses the Anthropic translator; only the URL and auth differ.
  *
@@ -22,7 +24,8 @@
  *  - streaming: the choice-less prompt-annotation chunk is dropped (its
  *    verdicts stay available via `getPromptFilterResults()`), blank
  *    id/model/created on async-filter annotation chunks are backfilled, and
- *    delta-less choices get `delta: {}` so OpenAI clients don't trip on them;
+ *    delta-less choices get `delta: {}` so OpenAI clients don't trip on them.
+ *    Other choice-less payloads, such as a mid-stream `{error}`, pass through;
  *  - reasoning models that inline a leading `<think>…</think>` block
  *    (DeepSeek-R1 & co.) have it moved into `reasoning_content`;
  *  - every Azure error envelope — including gateway-level ones on the Claude
@@ -42,7 +45,12 @@ import { transformChatRequest } from '../engine.js';
 import { resolveMaxCompletionTokens, stripReasoningContent } from '../helpers.js';
 import { UpstreamError, upstreamErrorMessage } from '../errors.js';
 import { parseRetryAfterMs } from '../retry.js';
-import { droppedOnReasoningModels, isReasoningModel, toolAwareReasoningEffort } from './openai.js';
+import {
+  droppedOnReasoningModels,
+  droppedWhileReasoning,
+  isReasoningModel,
+  modelAwareReasoningEffort,
+} from './openai.js';
 import { toAnthropicRequest, sendAnthropicRequest, streamAnthropicRequest } from './anthropic.js';
 
 /** Default `api-version` for `api: 'openai-deployments'` (latest GA). */
@@ -60,9 +68,10 @@ const DEFAULT_TIMEOUT_MS = 600_000;
 // Provider configs — declarative scalar-field mapping
 // ---------------------------------------------------------------------------
 
-// Reasoning-model rules (sampling/penalty/logprob/stop drops, GPT-6's
-// tools ⇒ reasoning_effort 'none') are shared with the OpenAI config: the
-// same models, the same live-verified behaviour.
+// Reasoning-model rules — which sampling, penalty, logprob and `stop`
+// controls each family accepts, and how `reasoning_effort` interacts with
+// function tools — are shared with the OpenAI config: the same models, the
+// same live-verified behaviour.
 
 /**
  * The Model Inference API expects `max_tokens`, but it forwards OpenAI
@@ -80,8 +89,8 @@ const modelInferenceMaxTokens: MapAction = {
 
 /** Config for the OpenAI-compatible surfaces (`openai-v1`, `openai-deployments`). */
 export const foundryChatConfig: ProviderParamConfig = {
-  temperature: droppedOnReasoningModels('temperature'),
-  top_p: droppedOnReasoningModels('top_p'),
+  temperature: droppedWhileReasoning('temperature'),
+  top_p: droppedWhileReasoning('top_p'),
   top_k: { kind: 'drop', reason: 'Foundry chat completions do not support top_k' },
   n: { kind: 'passthrough' },
   max_completion_tokens: { kind: 'passthrough' },
@@ -93,18 +102,18 @@ export const foundryChatConfig: ProviderParamConfig = {
     },
   },
   stop: droppedOnReasoningModels('stop'),
-  frequency_penalty: droppedOnReasoningModels('frequency_penalty'),
-  presence_penalty: droppedOnReasoningModels('presence_penalty'),
+  frequency_penalty: droppedWhileReasoning('frequency_penalty'),
+  presence_penalty: droppedWhileReasoning('presence_penalty'),
   logit_bias: droppedOnReasoningModels('logit_bias'),
   seed: { kind: 'passthrough' },
   user: { kind: 'passthrough' },
-  logprobs: droppedOnReasoningModels('logprobs'),
-  top_logprobs: droppedOnReasoningModels('top_logprobs'),
+  logprobs: droppedWhileReasoning('logprobs'),
+  top_logprobs: droppedWhileReasoning('top_logprobs'),
   response_format: { kind: 'passthrough' },
   tools: { kind: 'passthrough' },
   tool_choice: { kind: 'passthrough' },
   parallel_tool_calls: { kind: 'passthrough' },
-  reasoning_effort: toolAwareReasoningEffort,
+  reasoning_effort: modelAwareReasoningEffort,
   stream: { kind: 'passthrough' },
   stream_options: { kind: 'passthrough' },
 };
@@ -117,15 +126,15 @@ export const foundryChatConfig: ProviderParamConfig = {
  * schema too but verified to be forwarded, so they pass.
  */
 export const foundryModelInferenceChatConfig: ProviderParamConfig = {
-  temperature: droppedOnReasoningModels('temperature'),
-  top_p: droppedOnReasoningModels('top_p'),
+  temperature: droppedWhileReasoning('temperature'),
+  top_p: droppedWhileReasoning('top_p'),
   top_k: { kind: 'drop', reason: 'not in the Model Inference schema (send via provider_options with extraParameters)' },
   n: { kind: 'drop', reason: 'the Model Inference API only supports n=1' },
   max_completion_tokens: modelInferenceMaxTokens,
   max_tokens: modelInferenceMaxTokens,
   stop: droppedOnReasoningModels('stop', (v) => (Array.isArray(v) ? v : [v])),
-  frequency_penalty: droppedOnReasoningModels('frequency_penalty'),
-  presence_penalty: droppedOnReasoningModels('presence_penalty'),
+  frequency_penalty: droppedWhileReasoning('frequency_penalty'),
+  presence_penalty: droppedWhileReasoning('presence_penalty'),
   logit_bias: { kind: 'drop', reason: 'not in the Model Inference schema' },
   seed: { kind: 'passthrough' },
   user: { kind: 'drop', reason: 'not in the Model Inference schema' },
@@ -135,7 +144,7 @@ export const foundryModelInferenceChatConfig: ProviderParamConfig = {
   tools: { kind: 'passthrough' },
   tool_choice: { kind: 'passthrough' },
   parallel_tool_calls: { kind: 'drop', reason: 'not in the Model Inference schema' },
-  reasoning_effort: toolAwareReasoningEffort,
+  reasoning_effort: modelAwareReasoningEffort,
   stream: { kind: 'passthrough' },
   stream_options: { kind: 'passthrough' },
 };
@@ -340,8 +349,8 @@ export interface FoundrySendOptions extends FoundryTarget, FoundryAuth {
   extraParameters?: 'pass-through' | 'drop' | 'error';
   /**
    * Move a leading `<think>…</think>` block out of `content` into
-   * `reasoning_content`. Default `true`. Never applied when the upstream
-   * already returns `reasoning_content`.
+   * `reasoning_content`. Default `true`. Non-streaming messages that already
+   * carry `reasoning_content` are left alone.
    */
   extractThinkTags?: boolean;
   /** Extra headers merged last (e.g. `x-ms-client-request-id`, `anthropic-beta`). */
@@ -753,9 +762,12 @@ class FoundryStreamNormalizer {
 
     const choices = Array.isArray(chunk.choices) ? chunk.choices : [];
     if (choices.length === 0 && !chunk.usage) {
-      // Azure's prompt-annotation chunk: no choices, blank id/model.
       const results = chunk.prompt_filter_results ?? chunk.prompt_annotations;
-      if (Array.isArray(results)) this.promptFilterResults.push(...results);
+      // Anything else without choices — notably a mid-stream `{error}`
+      // payload — is not ours to drop or rewrite.
+      if (!Array.isArray(results)) return chunk;
+      // Azure's prompt-annotation chunk: no choices, blank id/model.
+      this.promptFilterResults.push(...results);
       return null;
     }
 

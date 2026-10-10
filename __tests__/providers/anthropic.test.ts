@@ -168,6 +168,25 @@ describe('anthropicChatConfig — scalar mapping', () => {
     });
   }
 
+  it("leaves thinking off for reasoning_effort 'none'", () => {
+    const { body, warnings } = transformChatRequest(
+      { ...base, reasoning_effort: 'none' },
+      anthropicChatConfig,
+      'anthropic',
+    );
+    assert.equal(body.thinking, undefined);
+    assert.ok(!warnings.some((w) => /reasoning_effort/.test(w)));
+  });
+
+  it("gives 'xhigh' the largest budget", () => {
+    const { body } = transformChatRequest(
+      { ...base, reasoning_effort: 'xhigh' },
+      anthropicChatConfig,
+      'anthropic',
+    );
+    assert.deepEqual(body.thinking, { type: 'enabled', budget_tokens: 32768 });
+  });
+
   it('falls back to medium budget when reasoning_effort is unrecognised', () => {
     const { body } = transformChatRequest(
       { ...base, reasoning_effort: 'bogus' as never },
