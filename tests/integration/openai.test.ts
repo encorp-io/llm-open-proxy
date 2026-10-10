@@ -6,10 +6,11 @@ import {
   assertUsage,
   skipIfMissingKey,
   call,
+  DEFAULT_OPENAI_MODEL,
 } from './helpers.js';
 
 const apiKey = process.env.OPENAI_API_KEY ?? '';
-const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
+const model = process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL;
 
 test('openai — basic request returns canonical response', skipIfMissingKey('OPENAI_API_KEY'), async () => {
   const { body } = convertChatRequest(buildMinimalRequest(model), 'openai');

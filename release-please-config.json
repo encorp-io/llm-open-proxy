@@ -10,6 +10,12 @@
       "prerelease": false,
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": false,
+      "extra-files": [
+        { "type": "json", "path": "examples/01-basic-anthropic/package.json", "jsonpath": "$.dependencies['@encorp.ai/llm-open-proxy']" },
+        { "type": "json", "path": "examples/02-streaming/package.json",       "jsonpath": "$.dependencies['@encorp.ai/llm-open-proxy']" },
+        { "type": "json", "path": "examples/03-multi-provider/package.json",  "jsonpath": "$.dependencies['@encorp.ai/llm-open-proxy']" },
+        { "type": "json", "path": "examples/04-express-proxy/package.json",   "jsonpath": "$.dependencies['@encorp.ai/llm-open-proxy']" }
+      ],
       "changelog-sections": [
         { "type": "feat",     "section": "Features" },
         { "type": "fix",      "section": "Bug Fixes" },

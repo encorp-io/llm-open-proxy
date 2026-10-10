@@ -33,6 +33,7 @@ import {
   collectSseContent,
   skipIfMissingKey,
   call,
+  DEFAULT_OPENAI_MODEL,
 } from './helpers.js';
 
 interface StreamCase {
@@ -50,7 +51,7 @@ const streamCases: StreamCase[] = [
     providerLabel: 'openai',
     provider: 'openai',
     modelEnv: 'OPENAI_MODEL',
-    defaultModel: 'gpt-4o-mini',
+    defaultModel: DEFAULT_OPENAI_MODEL,
     baseUrl: undefined,
   },
   {

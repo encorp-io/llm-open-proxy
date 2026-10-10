@@ -11,12 +11,16 @@
  * collapsing it to `[Object]`. `.message` itself stays clean (just the
  * passed-in string) — programmatic equality checks against the message
  * keep working.
+ *
+ * `retryAfterMs` carries the upstream's back-off hint (`retry-after-ms` or
+ * `retry-after` response header) when one was sent — typically on 429/503.
  */
 export class UpstreamError extends Error {
   constructor(
     message: string,
     public readonly statusCode: number,
     public readonly upstreamBody: unknown = {},
+    public readonly retryAfterMs?: number,
   ) {
     super(message);
     this.name = 'UpstreamError';
@@ -27,6 +31,20 @@ export class UpstreamError extends Error {
     const base = `${this.name} [${this.statusCode}]: ${this.message}`;
     return body ? `${base}\nupstreamBody: ${body}` : base;
   }
+}
+
+/**
+ * Pull a human-readable message out of an upstream error body. Reads the
+ * common `{error: {message}}` envelope first, then a top-level `message` —
+ * the shape Azure gateways use for e.g. Entra ID auth failures
+ * (`{statusCode, message}`) and the Model Inference API's flat errors.
+ */
+export function upstreamErrorMessage(body: unknown): string | undefined {
+  if (!body || typeof body !== 'object') return undefined;
+  const envelope = body as { error?: { message?: unknown }; message?: unknown };
+  if (typeof envelope.error?.message === 'string') return envelope.error.message;
+  if (typeof envelope.message === 'string') return envelope.message;
+  return undefined;
 }
 
 // Node, Bun, and Deno all honor this symbol for `console.log` / util.inspect

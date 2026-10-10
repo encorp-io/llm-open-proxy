@@ -35,6 +35,10 @@ export const deepseekChatConfig: ProviderParamConfig = {
     kind: 'custom',
     apply(body, value) {
       const v = String(value);
+      if (v === 'none') {
+        body.thinking = { type: 'disabled' };
+        return;
+      }
       const effort = v === 'high' || v === 'medium' ? 'high' : 'max';
       body.thinking = { type: 'enabled', reasoning_effort: effort };
     },

@@ -7,6 +7,7 @@ import {
   anthropicChatConfig,
   deepseekChatConfig,
   perplexityChatConfig,
+  foundryChatConfig,
 } from '../../src/providers/index.js';
 
 describe('getProviderConfig', () => {
@@ -40,5 +41,11 @@ describe('getProviderConfig', () => {
     const r = getProviderConfig('perplexity');
     assert.equal(r.config, perplexityChatConfig);
     assert.equal(r.canonicalProvider, 'perplexity');
+  });
+
+  it('returns the Foundry config for foundry', () => {
+    const r = getProviderConfig('foundry');
+    assert.equal(r.config, foundryChatConfig);
+    assert.equal(r.canonicalProvider, 'foundry');
   });
 });

@@ -29,7 +29,7 @@ import {
   DEEPSEEK_API_URL,
   GOOGLE_OPENAI_COMPAT_URL,
 } from '../../src/index.js';
-import { assertUsage, skipIfMissingKey, call } from './helpers.js';
+import { assertUsage, skipIfMissingKey, call, DEFAULT_OPENAI_MODEL } from './helpers.js';
 
 const JSON_PROMPT = [
   {
@@ -66,7 +66,7 @@ function assertParseableJsonContent(content: unknown, fieldHint: string): void {
 test('openai — response_format json_object returns parseable JSON', skipIfMissingKey('OPENAI_API_KEY'), async () => {
   const { body } = convertChatRequest(
     {
-      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+      model: process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL,
       messages: JSON_PROMPT,
       response_format: { type: 'json_object' },
       max_completion_tokens: 64,
@@ -129,7 +129,7 @@ test('deepseek — response_format json_object returns parseable JSON', skipIfMi
 test('openai — response_format json_schema enforces the schema', skipIfMissingKey('OPENAI_API_KEY'), async () => {
   const { body } = convertChatRequest(
     {
-      model: process.env.OPENAI_MODEL ?? 'gpt-4o-mini',
+      model: process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL,
       messages: [
         { role: 'system', content: 'Reply with a JSON object matching the schema. No prose.' },
         { role: 'user', content: 'A weather snapshot for Sofia: 22 degrees, sunny.' },

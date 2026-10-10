@@ -11,15 +11,20 @@ export function resolveMaxCompletionTokens(req: CanonicalChatRequest): number | 
 /** Default max_tokens used when Anthropic-style providers require the field but caller omitted it. */
 export const ANTHROPIC_DEFAULT_MAX_TOKENS = 4096;
 
-/** Anthropic reasoning_effort → thinking.budget_tokens mapping. */
+/**
+ * Anthropic reasoning_effort → thinking.budget_tokens mapping. `none` has no
+ * entry (thinking stays off); `xhigh` shares the `high` budget, the largest
+ * that fits under every model's output limit.
+ */
 export const ANTHROPIC_THINKING_BUDGET: Record<
-  NonNullable<CanonicalChatRequest['reasoning_effort']>,
+  Exclude<NonNullable<CanonicalChatRequest['reasoning_effort']>, 'none'>,
   number
 > = {
   minimal: 1024,
   low: 4096,
   medium: 16384,
   high: 32768,
+  xhigh: 32768,
 };
 
 /** Strip `reasoning_content` from assistant messages (used for non-DeepSeek providers). */

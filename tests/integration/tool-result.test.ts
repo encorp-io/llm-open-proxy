@@ -34,6 +34,7 @@ import {
   assertUsage,
   skipIfMissingKey,
   call,
+  DEFAULT_OPENAI_MODEL,
 } from './helpers.js';
 
 const FAKE_WEATHER_RESULT = 'It is currently sunny and 22 degrees Celsius in Sofia.';
@@ -113,7 +114,7 @@ test('anthropic — full tool round-trip: request → tool_use → tool_result �
 
 test('openai — full tool round-trip: request → tool_call → tool result → final answer', skipIfMissingKey('OPENAI_API_KEY'), async () => {
   const apiKey = process.env.OPENAI_API_KEY!;
-  const model = process.env.OPENAI_MODEL ?? 'gpt-4o-mini';
+  const model = process.env.OPENAI_MODEL ?? DEFAULT_OPENAI_MODEL;
 
   const { body: body1 } = convertChatRequest(
     {

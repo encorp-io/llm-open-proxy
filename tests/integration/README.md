@@ -40,14 +40,19 @@ Each test picks a cheap, fast model by default. To override:
 
 ```bash
 ANTHROPIC_MODEL=claude-opus-4-6 npm run test:integration
-OPENAI_MODEL=gpt-4o-mini       npm run test:integration
+OPENAI_MODEL=gpt-6-sol         npm run test:integration
 GOOGLE_MODEL=gemini-2.5-flash  npm run test:integration
 DEEPSEEK_MODEL=deepseek-chat   npm run test:integration
 DEEPSEEK_REASONER_MODEL=deepseek-reasoner  npm run test:integration   # thinking variant used by reasoning.test.ts
 PERPLEXITY_MODEL=sonar         npm run test:integration
 XAI_MODEL=grok-3-mini          npm run test:integration
 KIMI_MODEL=kimi-k2-0905-preview npm run test:integration
+FOUNDRY_MODEL=gpt-6-sol        npm run test:integration   # Foundry deployment name
 ```
+
+Foundry needs `FOUNDRY_ENDPOINT` + `FOUNDRY_API_KEY`. Its Claude and
+reasoning tests only run when `FOUNDRY_CLAUDE_MODEL` /
+`FOUNDRY_REASONER_MODEL` (e.g. a `DeepSeek-R1` deployment) are also set.
 
 If a model id is rejected by the upstream, the test fails with the
 upstream's exact error message — useful for keeping the defaults
@@ -68,6 +73,7 @@ providers. The matrix as of the latest commit:
 | Perplexity | ✓     | ✓⁵     | ✓⁶    | —          | —            | —     | —           | —           | —         |
 | xAI        | ✓     | ✓      | ✓     | —          | —            | —     | —           | —           | —         |
 | Kimi       | ✓     | ✓      | ✓     | —          | —            | —     | —           | —           | —         |
+| Foundry    | ✓⁷    | ✓      | ✓     | —          | —            | —     | —           | —           | ✓⁸        |
 
 ¹ Anthropic basic covers three flows: minimal request, system message
   extraction, streaming SSE translation (the heaviest single test).
@@ -89,6 +95,18 @@ providers. The matrix as of the latest commit:
 ⁶ Perplexity has no function calling; the test asserts a 4xx
   `UpstreamError` (it would catch a regression where the library
   silently drops the `tools` field instead).
+
+⁷ Foundry basic covers the v1 API, the dated deployments API and the
+  Model Inference API against the same deployment, plus Claude on Foundry
+  (basic + streaming) when `FOUNDRY_CLAUDE_MODEL` is set. All live in
+  `foundry.test.ts`. Last verified live against GPT-6 (`gpt-6-sol`,
+  `gpt-6-luna`) and `DeepSeek-V4.1-Flash` via a project endpoint.
+
+⁸ Needs `FOUNDRY_REASONER_MODEL`. Non-streaming and streaming; the
+  request sets `reasoning_effort` because some reasoners (DeepSeek V4.x)
+  only think when asked. Passes whether the deployment returns
+  `reasoning_content` natively or inline `<think>` tags, which the
+  adapter extracts.
 
 ### What each cross-cutting file proves
 

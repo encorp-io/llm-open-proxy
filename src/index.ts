@@ -17,6 +17,7 @@
  *       import {
  *         sendChatRequest,           // OpenAI-shaped providers (openai/google/...)
  *         sendAnthropicRequest,      // Anthropic-shaped provider
+ *         sendFoundryRequest,        // Microsoft Foundry (any of its APIs)
  *       } from '@encorp.ai/llm-open-proxy';
  *
  *  3. Tree-shakeable submodules — import a single provider's adapter when
@@ -60,7 +61,7 @@ export {
 
 // Errors + retry
 export { UpstreamError } from './errors.js';
-export { isRetryableUpstreamStatus } from './retry.js';
+export { isRetryableUpstreamStatus, parseRetryAfterMs } from './retry.js';
 
 // Provider configs + resolver
 export {
@@ -70,6 +71,7 @@ export {
   anthropicChatConfig,
   deepseekChatConfig,
   perplexityChatConfig,
+  foundryChatConfig,
 } from './providers/index.js';
 
 // Transport — OpenAI-shaped providers
@@ -103,6 +105,37 @@ export type {
   AnthropicRequest,
   RequestTranslationResult,
 } from './providers/anthropic.js';
+
+// Transport — Microsoft Foundry (Azure OpenAI, Foundry Models, Claude)
+export {
+  sendFoundryRequest,
+  streamFoundryRequest,
+  convertFoundryRequest,
+  buildFoundryUrl,
+  getFoundryContentFilterError,
+  foundryModelInferenceChatConfig,
+  FOUNDRY_DEPLOYMENTS_API_VERSION,
+  FOUNDRY_MODEL_INFERENCE_API_VERSION,
+  FOUNDRY_ENTRA_SCOPE,
+  AZURE_COGNITIVE_SERVICES_SCOPE,
+} from './providers/foundry.js';
+export type {
+  FoundryApi,
+  FoundryTarget,
+  FoundryAuth,
+  FoundrySendOptions,
+  FoundrySendResult,
+  FoundryStreamResult,
+  FoundryConvertOptions,
+  FoundryChatResponse,
+  FoundryChatChoice,
+  FoundryTokenUsage,
+  FoundryContentFilterResults,
+  FoundryContentFilterSeverity,
+  FoundryContentFilterDetection,
+  FoundryPromptFilterResult,
+  FoundryContentFilterError,
+} from './providers/foundry.js';
 
 // ---------------------------------------------------------------------------
 // High-level convenience: convertChatRequest()
