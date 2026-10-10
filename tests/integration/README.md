@@ -36,10 +36,14 @@ npm run test:integration -- '.test-build-integration/tests/integration/anthropic
 
 ## Overriding the model used per provider
 
-Each test picks a cheap, fast model by default. To override:
+Each test picks a cheap, fast model by default (`DEFAULT_OPENAI_MODEL` /
+`DEFAULT_ANTHROPIC_MODEL` in `helpers.ts`). The Anthropic default,
+`claude-haiku-5-5`, exercises the adaptive-thinking rules; set
+`ANTHROPIC_MODEL=claude-haiku-4-5` (or `claude-opus-4-6`) to cover the
+budget-thinking path. To override:
 
 ```bash
-ANTHROPIC_MODEL=claude-opus-4-6 npm run test:integration
+ANTHROPIC_MODEL=claude-haiku-4-5 npm run test:integration
 OPENAI_MODEL=gpt-6-sol         npm run test:integration
 GOOGLE_MODEL=gemini-2.5-flash  npm run test:integration
 DEEPSEEK_MODEL=deepseek-chat   npm run test:integration
@@ -57,6 +61,10 @@ reasoning tests only run when `FOUNDRY_CLAUDE_MODEL` /
 If a model id is rejected by the upstream, the test fails with the
 upstream's exact error message — useful for keeping the defaults
 current.
+
+`scripts/validate-claude-rules.mjs` is a heavier, separate check of the
+Claude model-family rules across every current Claude model (a few dollars
+per run): `npm run build && node --env-file=.env scripts/validate-claude-rules.mjs`.
 
 ## What's covered
 

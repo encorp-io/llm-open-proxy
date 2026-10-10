@@ -43,6 +43,16 @@ export async function call<T>(fn: () => Promise<T>): Promise<T> {
 export const DEFAULT_OPENAI_MODEL = 'gpt-6-luna';
 
 /**
+ * Default Anthropic model for the integration suite. Claude Haiku 5.5 is the
+ * cheapest current Claude model and takes the adaptive-thinking path (no
+ * sampling controls, `output_config.effort`); Haiku 4.5, the previous
+ * default, is listed for retirement on Microsoft Foundry on 2026-11-15.
+ * Override per run with ANTHROPIC_MODEL (e.g. claude-haiku-4-5 to cover the
+ * budget-thinking path).
+ */
+export const DEFAULT_ANTHROPIC_MODEL = 'claude-haiku-5-5';
+
+/**
  * Build the smallest meaningful chat request: one system message, one
  * user message, capped at ~10 output tokens.
  */

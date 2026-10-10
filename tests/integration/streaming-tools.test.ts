@@ -39,6 +39,7 @@ import {
   skipIfMissingKey,
   call,
   DEFAULT_OPENAI_MODEL,
+  DEFAULT_ANTHROPIC_MODEL,
 } from './helpers.js';
 
 const WEATHER_USER_MSG = {
@@ -51,7 +52,7 @@ test('anthropic — streaming tool call assembles correctly from input_json_delt
     streamAnthropicRequest({
       apiKey: process.env.ANTHROPIC_API_KEY!,
       body: {
-        model: process.env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5',
+        model: process.env.ANTHROPIC_MODEL ?? DEFAULT_ANTHROPIC_MODEL,
         messages: [WEATHER_USER_MSG],
         tools: [WEATHER_TOOL],
         tool_choice: 'auto',

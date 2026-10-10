@@ -37,6 +37,7 @@ import {
   skipIfMissingKey,
   call,
   DEFAULT_OPENAI_MODEL,
+  DEFAULT_ANTHROPIC_MODEL,
 } from './helpers.js';
 
 const WEATHER_PROMPT: CanonicalChatRequest['messages'] = [
@@ -52,7 +53,7 @@ test('anthropic — calls the get_weather tool when asked about weather', skipIf
     sendAnthropicRequest({
       apiKey: process.env.ANTHROPIC_API_KEY!,
       body: {
-        model: process.env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5',
+        model: process.env.ANTHROPIC_MODEL ?? DEFAULT_ANTHROPIC_MODEL,
         messages: WEATHER_PROMPT,
         tools: [WEATHER_TOOL],
         tool_choice: 'auto',

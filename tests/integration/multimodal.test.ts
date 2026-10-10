@@ -33,6 +33,7 @@ import {
   skipIfMissingKey,
   call,
   DEFAULT_OPENAI_MODEL,
+  DEFAULT_ANTHROPIC_MODEL,
 } from './helpers.js';
 
 const VISION_PROMPT = [
@@ -53,7 +54,7 @@ test('anthropic — accepts image_url data URI and translates to image source bl
     sendAnthropicRequest({
       apiKey: process.env.ANTHROPIC_API_KEY!,
       body: {
-        model: process.env.ANTHROPIC_MODEL ?? 'claude-haiku-4-5',
+        model: process.env.ANTHROPIC_MODEL ?? DEFAULT_ANTHROPIC_MODEL,
         messages: VISION_PROMPT,
         max_completion_tokens: 64,
       },
